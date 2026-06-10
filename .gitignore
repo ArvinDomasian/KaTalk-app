@@ -1,0 +1,7 @@
+node_modules
+.expo
+dist
+web-build
+*.log
+firebase-debug.log
+firestore-debug.log

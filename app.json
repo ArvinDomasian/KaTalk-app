@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "KaTalk",
+    "slug": "katalk",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.katalk.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "KaTalk uses the camera only when you join a video match.",
+        "NSMicrophoneUsageDescription": "KaTalk uses the microphone only when you join a voice room or video match.",
+        "NSLocationWhenInUseUsageDescription": "KaTalk uses your location to show nearby members by distance."
+      }
+    },
+    "android": {
+      "package": "com.katalk.app",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "KaTalk uses your camera only for video matches.",
+          "microphonePermission": "KaTalk uses your microphone only for voice rooms and video matches.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "KaTalk uses your location to show nearby members by distance."
+        }
+      ]
+    ]
+  }
+}
