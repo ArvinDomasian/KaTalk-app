@@ -23,6 +23,7 @@ type AuthRegistrationResult = {
 };
 
 const comfortOptions: Array<UserProfile['comfort']> = ['shy', 'balanced', 'open'];
+const DEMO_VERIFICATION_CODE = '2468';
 const thisYear = new Date().getFullYear();
 const birthYears = Array.from({ length: 51 }, (_, index) => String(thisYear - 18 - index));
 const birthMonths = [
@@ -349,8 +350,15 @@ function WelcomeStartScreen({
   const cardOpacity = useRef(new Animated.Value(1)).current;
   const cardTranslate = useRef(new Animated.Value(0)).current;
   const heroPhotos = [candidates[1], candidates[2], candidates[0], candidates[3]];
-  const canContinueSocial = authName.trim().length >= 2 && authEmail.includes('@');
-  const canContinuePhone = phoneNumber.trim().length >= 8 && verificationCode.trim().length >= 4;
+  const canContinueSocial =
+    authName.trim().length >= 2 &&
+    authEmail.includes('@') &&
+    codeSent &&
+    verificationCode.trim() === DEMO_VERIFICATION_CODE;
+  const canContinuePhone =
+    codeSent &&
+    phoneNumber.trim().length >= 8 &&
+    verificationCode.trim() === DEMO_VERIFICATION_CODE;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -402,7 +410,11 @@ function WelcomeStartScreen({
   }
 
   function selectMethod(method: AuthMethod) {
-    transitionCard(() => setAuthMethod(method));
+    transitionCard(() => {
+      setAuthMethod(method);
+      setCodeSent(false);
+      setVerificationCode('');
+    });
   }
 
   function resetToMethods() {
@@ -468,8 +480,16 @@ function WelcomeStartScreen({
             codeSent={codeSent}
             canContinue={authMethod === 'phone' ? canContinuePhone : canContinueSocial}
             onNameChange={setAuthName}
-            onEmailChange={setAuthEmail}
-            onPhoneChange={setPhoneNumber}
+            onEmailChange={(value) => {
+              setAuthEmail(value);
+              setCodeSent(false);
+              setVerificationCode('');
+            }}
+            onPhoneChange={(value) => {
+              setPhoneNumber(value);
+              setCodeSent(false);
+              setVerificationCode('');
+            }}
             onCodeChange={setVerificationCode}
             onSendCode={() => setCodeSent(true)}
             onBack={resetToMethods}
@@ -561,6 +581,9 @@ function AuthMethodForm({
         >
           <AppText style={styles.sendCodeText}>{codeSent ? 'Code Sent' : 'Send Code'}</AppText>
         </PressableScale>
+        {codeSent ? (
+          <AppText style={styles.verificationHint}>Demo verification code: {DEMO_VERIFICATION_CODE}</AppText>
+        ) : null}
         <TextInput
           value={verificationCode}
           onChangeText={onCodeChange}
@@ -580,7 +603,7 @@ function AuthMethodForm({
             disabled={!canContinue}
             style={[styles.continueAuthButton, !canContinue && styles.disabledAuthButton]}
           >
-            <AppText style={styles.continueAuthText}>Verify and Continue</AppText>
+            <AppText style={styles.continueAuthText}>Confirm Verification</AppText>
           </PressableScale>
         </View>
       </View>
@@ -605,6 +628,27 @@ function AuthMethodForm({
         placeholderTextColor={colors.muted}
         style={styles.authInput}
       />
+      <PressableScale
+        accessibilityRole="button"
+        onPress={onSendCode}
+        disabled={!email.includes('@')}
+        style={[styles.sendCodeButton, !email.includes('@') && styles.disabledAuthButton]}
+      >
+        <AppText style={styles.sendCodeText}>
+          {codeSent ? 'Verification Sent' : 'Send Verification Code'}
+        </AppText>
+      </PressableScale>
+      {codeSent ? (
+        <AppText style={styles.verificationHint}>Demo verification code: {DEMO_VERIFICATION_CODE}</AppText>
+      ) : null}
+      <TextInput
+        value={verificationCode}
+        onChangeText={onCodeChange}
+        keyboardType="number-pad"
+        placeholder="Verification code"
+        placeholderTextColor={colors.muted}
+        style={styles.authInput}
+      />
       <View style={styles.authFormActions}>
         <PressableScale accessibilityRole="button" onPress={onBack} style={styles.backAuthButton}>
           <Ionicons name="chevron-back" size={17} color={colors.ink} />
@@ -616,7 +660,7 @@ function AuthMethodForm({
           disabled={!canContinue}
           style={[styles.continueAuthButton, !canContinue && styles.disabledAuthButton]}
         >
-          <AppText style={styles.continueAuthText}>Create Account</AppText>
+          <AppText style={styles.continueAuthText}>Confirm Verification</AppText>
         </PressableScale>
       </View>
     </View>
@@ -947,6 +991,12 @@ const styles = StyleSheet.create({
   sendCodeText: {
     color: colors.accent,
     fontWeight: '900'
+  },
+  verificationHint: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center'
   },
   authFormActions: {
     flexDirection: 'row',

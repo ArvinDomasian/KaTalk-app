@@ -15,9 +15,10 @@ const MATCH_SECONDS = 120;
 
 type Props = {
   profile: UserProfile;
+  onChattingStateChange?: (isChatting: boolean) => void;
 };
 
-export function MessageMatchScreen({ profile }: Props) {
+export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
   const [status, setStatus] = useState<MatchStatus>('idle');
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(MATCH_SECONDS);
@@ -39,6 +40,14 @@ export function MessageMatchScreen({ profile }: Props) {
   useEffect(() => {
     void refreshSavedMatches();
   }, [profile.id]);
+
+  useEffect(() => {
+    onChattingStateChange?.(status === 'active');
+  }, [onChattingStateChange, status]);
+
+  useEffect(() => {
+    return () => onChattingStateChange?.(false);
+  }, [onChattingStateChange]);
 
   useEffect(() => {
     if (status !== 'active') {
@@ -183,6 +192,23 @@ export function MessageMatchScreen({ profile }: Props) {
     setRevealed(false);
   }
 
+  function confirmReportOrBlock(kind: 'reported' | 'blocked') {
+    Alert.alert(
+      kind === 'reported' ? 'Report this match?' : 'Block this match?',
+      kind === 'reported'
+        ? 'The chat will stay open unless you confirm. This helps prevent accidental taps.'
+        : 'Blocking ends this chat and prevents future matching with this member.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: kind === 'reported' ? 'Report' : 'Block',
+          style: 'destructive',
+          onPress: () => reportOrBlock(kind)
+        }
+      ]
+    );
+  }
+
   function reportOrBlock(kind: 'reported' | 'blocked') {
     if (candidate) {
       void appServices.safety.record({
@@ -214,8 +240,7 @@ export function MessageMatchScreen({ profile }: Props) {
         <ScrollView contentContainerStyle={styles.chatHome}>
           <View style={styles.topBar}>
             <View>
-              <AppText style={styles.screenTitle}>Chatting</AppText>
-              <AppText style={styles.screenSubtitle}>Two-minute text matches</AppText>
+              <AppText style={styles.screenTitle}>KaTalk</AppText>
             </View>
             <PressableScale accessibilityRole="button" style={styles.roundIcon}>
               <Ionicons name="search-outline" size={21} color={colors.ink} />
@@ -362,7 +387,7 @@ export function MessageMatchScreen({ profile }: Props) {
                   label="Report"
                   icon="flag-outline"
                   variant="danger"
-                  onPress={() => reportOrBlock('reported')}
+                  onPress={() => confirmReportOrBlock('reported')}
                   style={styles.quickButton}
                 />
               </View>
@@ -393,7 +418,7 @@ export function MessageMatchScreen({ profile }: Props) {
                 label="Block"
                 icon="ban-outline"
                 variant="danger"
-                onPress={() => reportOrBlock('blocked')}
+                onPress={() => confirmReportOrBlock('blocked')}
               />
             </View>
           ) : (

@@ -23,6 +23,7 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isEnteringApp, setIsEnteringApp] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('message');
+  const [isMessageChatting, setIsMessageChatting] = useState(false);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -36,6 +37,7 @@ export default function App() {
   function completeRegistration(nextProfile: UserProfile) {
     setIsEnteringApp(true);
     setActiveTab('message');
+    setIsMessageChatting(false);
 
     transitionTimerRef.current = setTimeout(() => {
       setProfile(nextProfile);
@@ -53,7 +55,12 @@ export default function App() {
     }
 
     if (activeTab === 'message') {
-      return <MessageMatchScreen profile={profile} />;
+      return (
+        <MessageMatchScreen
+          profile={profile}
+          onChattingStateChange={setIsMessageChatting}
+        />
+      );
     }
 
     if (activeTab === 'rooms') {
@@ -63,11 +70,21 @@ export default function App() {
     return <VideoNearbyScreen profile={profile} />;
   }, [activeTab, isEnteringApp, profile]);
 
+  useEffect(() => {
+    if (activeTab !== 'message') {
+      setIsMessageChatting(false);
+    }
+  }, [activeTab]);
+
+  const shouldShowTabs = Boolean(profile && !isEnteringApp && !isMessageChatting);
+
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" />
-      <View style={styles.shell}>{activeScreen}</View>
-      {profile && !isEnteringApp ? (
+      <View style={[styles.shell, shouldShowTabs && styles.shellWithTabs]}>
+        {activeScreen}
+      </View>
+      {shouldShowTabs ? (
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -99,25 +116,38 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background
+    backgroundColor: colors.background,
+    position: 'relative'
   },
   shell: {
     flex: 1
   },
+  shellWithTabs: {
+    paddingBottom: 82
+  },
   tabBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 12,
     flexDirection: 'row',
     gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-    backgroundColor: colors.background
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    shadowColor: '#8FA5B5',
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6
   },
   tabButton: {
     flex: 1,
-    minHeight: 54,
-    borderRadius: 8,
+    minHeight: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4
