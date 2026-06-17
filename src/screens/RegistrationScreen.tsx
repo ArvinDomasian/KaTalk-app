@@ -6,6 +6,7 @@ import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import { candidates } from '../data/mockData';
+import { confirmEmailVerification, startEmailVerification } from '../services/firebaseAuthService';
 import { colors } from '../theme';
 import type { UserProfile } from '../types';
 import { isAdult } from '../utils/age';
@@ -23,7 +24,6 @@ type AuthRegistrationResult = {
 };
 
 const comfortOptions: Array<UserProfile['comfort']> = ['shy', 'balanced', 'open'];
-const DEMO_VERIFICATION_CODE = '2468';
 const thisYear = new Date().getFullYear();
 const birthYears = Array.from({ length: 51 }, (_, index) => String(thisYear - 18 - index));
 const birthMonths = [
@@ -343,22 +343,17 @@ function WelcomeStartScreen({
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
   const [heroIndex, setHeroIndex] = useState(1);
   const heroOpacity = useRef(new Animated.Value(1)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
   const cardTranslate = useRef(new Animated.Value(0)).current;
   const heroPhotos = [candidates[1], candidates[2], candidates[0], candidates[3]];
-  const canContinueSocial =
-    authName.trim().length >= 2 &&
-    authEmail.includes('@') &&
-    codeSent &&
-    verificationCode.trim() === DEMO_VERIFICATION_CODE;
-  const canContinuePhone =
-    codeSent &&
-    phoneNumber.trim().length >= 8 &&
-    verificationCode.trim() === DEMO_VERIFICATION_CODE;
+  const canSendSocial = authName.trim().length >= 2 && authEmail.includes('@') && !authBusy && !verificationSent;
+  const canConfirmSocial = verificationSent && !authBusy;
+  const canSendPhone = phoneNumber.trim().length >= 8 && !authBusy;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -409,19 +404,23 @@ function WelcomeStartScreen({
     });
   }
 
+  function resetVerificationState() {
+    setVerificationSent(false);
+    setVerificationStatus(null);
+    setAuthBusy(false);
+  }
+
   function selectMethod(method: AuthMethod) {
     transitionCard(() => {
       setAuthMethod(method);
-      setCodeSent(false);
-      setVerificationCode('');
+      resetVerificationState();
     });
   }
 
   function resetToMethods() {
     transitionCard(() => {
       setAuthMethod(null);
-      setCodeSent(false);
-      setVerificationCode('');
+      resetVerificationState();
     });
   }
 
@@ -431,6 +430,40 @@ function WelcomeStartScreen({
       displayName: authName.trim() || undefined,
       contact: authMethod === 'phone' ? phoneNumber.trim() : authEmail.trim()
     });
+  }
+
+  async function handleSendVerification() {
+    if (authMethod === 'phone') {
+      setVerificationStatus('Phone verification needs Firebase Phone Auth setup before real SMS codes can be sent.');
+      return;
+    }
+
+    setAuthBusy(true);
+    setVerificationStatus(null);
+
+    const result = await startEmailVerification(authEmail.trim(), authName.trim());
+
+    setVerificationSent(result.ok);
+    setVerificationStatus(result.message);
+    setAuthBusy(false);
+  }
+
+  async function handleConfirmVerification() {
+    if (authMethod === 'phone') {
+      setVerificationStatus('Phone verification is not active yet. Use Apple or Google email verification for now.');
+      return;
+    }
+
+    setAuthBusy(true);
+
+    const result = await confirmEmailVerification();
+
+    setVerificationStatus(result.message);
+    setAuthBusy(false);
+
+    if (result.ok) {
+      completeAuth();
+    }
   }
 
   return (
@@ -464,8 +497,8 @@ function WelcomeStartScreen({
         <AppText style={styles.welcomeCopy}>
           {authMethod
             ? authMethod === 'phone'
-              ? 'Enter your phone number, then confirm the verification code.'
-              : 'Confirm your account details before creating your KaTalk profile.'
+              ? 'Real SMS verification needs Firebase Phone Auth setup before this method can go live.'
+              : 'Enter your email, open Gmail or your inbox, then confirm Firebase email verification.'
             : showRegisterOptions
             ? 'Choose a registration method to create your calm, anonymous-first profile.'
             : 'Create a unique emotional story that describes you better than words.'}
@@ -476,24 +509,23 @@ function WelcomeStartScreen({
             name={authName}
             email={authEmail}
             phoneNumber={phoneNumber}
-            verificationCode={verificationCode}
-            codeSent={codeSent}
-            canContinue={authMethod === 'phone' ? canContinuePhone : canContinueSocial}
+            verificationSent={verificationSent}
+            verificationStatus={verificationStatus}
+            isBusy={authBusy}
+            canSend={authMethod === 'phone' ? canSendPhone : canSendSocial}
+            canContinue={authMethod === 'phone' ? false : canConfirmSocial}
             onNameChange={setAuthName}
             onEmailChange={(value) => {
               setAuthEmail(value);
-              setCodeSent(false);
-              setVerificationCode('');
+              resetVerificationState();
             }}
             onPhoneChange={(value) => {
               setPhoneNumber(value);
-              setCodeSent(false);
-              setVerificationCode('');
+              resetVerificationState();
             }}
-            onCodeChange={setVerificationCode}
-            onSendCode={() => setCodeSent(true)}
+            onSendCode={handleSendVerification}
             onBack={resetToMethods}
-            onContinue={completeAuth}
+            onContinue={handleConfirmVerification}
           />
         ) : showRegisterOptions ? (
           <>
@@ -536,13 +568,14 @@ function AuthMethodForm({
   name,
   email,
   phoneNumber,
-  verificationCode,
-  codeSent,
+  verificationSent,
+  verificationStatus,
+  isBusy,
+  canSend,
   canContinue,
   onNameChange,
   onEmailChange,
   onPhoneChange,
-  onCodeChange,
   onSendCode,
   onBack,
   onContinue
@@ -551,13 +584,14 @@ function AuthMethodForm({
   name: string;
   email: string;
   phoneNumber: string;
-  verificationCode: string;
-  codeSent: boolean;
+  verificationSent: boolean;
+  verificationStatus: string | null;
+  isBusy: boolean;
+  canSend: boolean;
   canContinue: boolean;
   onNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
-  onCodeChange: (value: string) => void;
   onSendCode: () => void;
   onBack: () => void;
   onContinue: () => void;
@@ -576,22 +610,14 @@ function AuthMethodForm({
         <PressableScale
           accessibilityRole="button"
           onPress={onSendCode}
-          disabled={phoneNumber.trim().length < 8}
-          style={[styles.sendCodeButton, phoneNumber.trim().length < 8 && styles.disabledAuthButton]}
+          disabled={!canSend}
+          style={[styles.sendCodeButton, !canSend && styles.disabledAuthButton]}
         >
-          <AppText style={styles.sendCodeText}>{codeSent ? 'Code Sent' : 'Send Code'}</AppText>
+          <AppText style={styles.sendCodeText}>Set Up Phone Verification</AppText>
         </PressableScale>
-        {codeSent ? (
-          <AppText style={styles.verificationHint}>Demo verification code: {DEMO_VERIFICATION_CODE}</AppText>
+        {verificationStatus ? (
+          <AppText style={styles.verificationHint}>{verificationStatus}</AppText>
         ) : null}
-        <TextInput
-          value={verificationCode}
-          onChangeText={onCodeChange}
-          keyboardType="number-pad"
-          placeholder="Verification code"
-          placeholderTextColor={colors.muted}
-          style={styles.authInput}
-        />
         <View style={styles.authFormActions}>
           <PressableScale accessibilityRole="button" onPress={onBack} style={styles.backAuthButton}>
             <Ionicons name="chevron-back" size={17} color={colors.ink} />
@@ -631,24 +657,16 @@ function AuthMethodForm({
       <PressableScale
         accessibilityRole="button"
         onPress={onSendCode}
-        disabled={!email.includes('@')}
-        style={[styles.sendCodeButton, !email.includes('@') && styles.disabledAuthButton]}
+        disabled={!canSend}
+        style={[styles.sendCodeButton, !canSend && styles.disabledAuthButton]}
       >
         <AppText style={styles.sendCodeText}>
-          {codeSent ? 'Verification Sent' : 'Send Verification Code'}
+          {isBusy ? 'Working...' : verificationSent ? 'Verification Sent' : 'Send Verification Email'}
         </AppText>
       </PressableScale>
-      {codeSent ? (
-        <AppText style={styles.verificationHint}>Demo verification code: {DEMO_VERIFICATION_CODE}</AppText>
+      {verificationStatus ? (
+        <AppText style={styles.verificationHint}>{verificationStatus}</AppText>
       ) : null}
-      <TextInput
-        value={verificationCode}
-        onChangeText={onCodeChange}
-        keyboardType="number-pad"
-        placeholder="Verification code"
-        placeholderTextColor={colors.muted}
-        style={styles.authInput}
-      />
       <View style={styles.authFormActions}>
         <PressableScale accessibilityRole="button" onPress={onBack} style={styles.backAuthButton}>
           <Ionicons name="chevron-back" size={17} color={colors.ink} />

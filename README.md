@@ -6,6 +6,7 @@ KaTalk is an introvert-friendly dating app prototype for Android and iOS. The cu
 
 - Adult-only registration with date-of-birth 18+ check.
 - Required Terms, Privacy Policy, and Community Rules consent.
+- Real Firebase email verification for Apple/Google email registration once Firebase env values are configured.
 - Anonymous-first profile setup and safety onboarding.
 - Tab 1: one-to-one message matching with a visible 2-minute timer.
 - Tab 1 automatically ends the chat when the timer reaches zero.
@@ -33,6 +34,8 @@ npm run start
 
 Then open it with Expo Go, an Android emulator, an iOS simulator, or the Expo web target.
 
+Real email verification requires Firebase Auth config. Copy `.env.example` to `.env`, fill in the `EXPO_PUBLIC_FIREBASE_*` values from your Firebase project, and enable Email/Password sign-in in Firebase Authentication. Blank values will not send emails, and Expo must be fully restarted after editing `.env`.
+
 ## Verification
 
 Run TypeScript checking after dependencies are installed:
@@ -45,6 +48,7 @@ Manual checks:
 
 - Under-18 date of birth cannot enter the app.
 - Registration requires all three consent checkboxes.
+- Apple/Google email registration sends a real Firebase verification email when Firebase is configured.
 - Message Match starts a text-only chat and shows `2:00`.
 - The message chat ends automatically when the timer reaches zero.
 - There is no manual Change Match button.
