@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ImageBackground, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
-import { ScreenHeader } from '../components/ScreenHeader';
 import { appServices } from '../services/localAppServices';
 import type { VideoSession } from '../services/contracts';
 import { colors } from '../theme';
@@ -101,34 +100,22 @@ export function VideoNearbyScreen({ profile }: Props) {
 
   return (
     <View style={styles.root}>
-      <ScreenHeader
-        title="Video + Nearby"
-        subtitle={`${profile.nickname}, video is optional. Nearby discovery has no chat actions.`}
-      />
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.topBar}>
+          <AppText style={styles.screenTitle}>Nearby you</AppText>
+          <Ionicons name="ellipsis-horizontal" size={24} color={colors.muted} />
+        </View>
+
         <View style={styles.videoPanel}>
-          <View style={styles.videoCanvas}>
-            {inVideo && activeCandidate ? (
-              <>
-                <View style={[styles.videoAvatar, { backgroundColor: activeCandidate.avatarColor }]}>
-                  <AppText style={styles.videoInitial}>
-                    {activeCandidate.nickname.charAt(0)}
-                  </AppText>
-                </View>
-                <AppText style={styles.videoTitle}>Anonymous video match</AppText>
-                <AppText style={styles.videoCopy}>
-                  Camera starts off. Turn it on only when you feel ready.
-                </AppText>
-              </>
-            ) : (
-              <>
-                <Ionicons name="videocam-outline" size={54} color={colors.accent} />
-                <AppText style={styles.videoTitle}>Start optional video</AppText>
-                <AppText style={styles.videoCopy}>
-                  Camera and microphone permissions are used only inside video matches.
-                </AppText>
-              </>
-            )}
+          <View style={styles.videoText}>
+            <AppText style={styles.videoTitle}>
+              {inVideo && activeCandidate ? 'Video match active' : 'Optional video match'}
+            </AppText>
+            <AppText style={styles.videoCopy}>
+              {inVideo && activeCandidate
+                ? 'Camera starts off. You control reveal, mute, report, and leave.'
+                : 'Start a one-to-one video match without opening chat.'}
+            </AppText>
           </View>
 
           {inVideo ? (
@@ -166,53 +153,50 @@ export function VideoNearbyScreen({ profile }: Props) {
           )}
         </View>
 
-        <View style={styles.nearbyHeader}>
-          <View>
-            <AppText style={styles.nearbyTitle}>Nearby members</AppText>
-            <AppText style={styles.nearbySubtitle}>Distance only. No map pins, no live tracking.</AppText>
-          </View>
-          <View style={styles.locationPill}>
-            <Ionicons name="location-outline" size={16} color={colors.background} />
-            <AppText style={styles.locationText}>On</AppText>
-          </View>
-        </View>
-
-        {nearbyMembers.map((member) => (
-            <View key={member.id} style={styles.memberCard}>
-              <View style={[styles.memberAvatar, { backgroundColor: member.avatarColor }]}>
-                <AppText style={styles.memberInitial}>{member.nickname.charAt(0)}</AppText>
-              </View>
-              <View style={styles.memberInfo}>
-                <AppText style={styles.memberName}>Anonymous member, {member.age}</AppText>
-                <AppText style={styles.memberMeta}>
-                  {member.distanceMiles.toFixed(1)} miles away • {member.interests.join(', ')}
-                </AppText>
-              </View>
-              <View style={styles.nearbyActions}>
+        <View style={styles.memberGrid}>
+          {nearbyMembers.map((member) => (
+            <View key={member.id} style={styles.memberTile}>
+              <ImageBackground
+                source={{ uri: member.photoUrl }}
+                imageStyle={styles.memberImage}
+                style={styles.memberPhoto}
+              >
+                <View style={styles.distanceBadge}>
+                  <AppText style={styles.distanceBadgeText}>
+                    {member.distanceMiles.toFixed(1)} Km
+                  </AppText>
+                </View>
+                <View style={styles.photoActions}>
+                  <PressableScale
+                    accessibilityRole="button"
+                    onPress={() => handleNearbySafety('report', member)}
+                    style={styles.photoIcon}
+                  >
+                    <Ionicons name="flag" size={15} color={colors.onAccent} />
+                  </PressableScale>
+                  <PressableScale
+                    accessibilityRole="button"
+                    onPress={() => handleNearbySafety('block', member)}
+                    style={styles.photoIcon}
+                  >
+                    <Ionicons name="ban" size={15} color={colors.onAccent} />
+                  </PressableScale>
+                </View>
+                <AppText style={styles.photoLocation}>Los Angeles, CA</AppText>
+              </ImageBackground>
+              <View style={styles.memberCaption}>
+                <AppText style={styles.memberName}>{member.nickname}, {member.age}</AppText>
                 <PressableScale
                   accessibilityRole="button"
                   onPress={() => Alert.alert('Profile preview', member.prompt)}
                   style={styles.profileButton}
                 >
-                  <Ionicons name="person-outline" size={19} color={colors.ink} />
-                </PressableScale>
-                <PressableScale
-                  accessibilityRole="button"
-                  onPress={() => handleNearbySafety('report', member)}
-                  style={styles.profileButton}
-                >
-                  <Ionicons name="flag-outline" size={18} color={colors.danger} />
-                </PressableScale>
-                <PressableScale
-                  accessibilityRole="button"
-                  onPress={() => handleNearbySafety('block', member)}
-                  style={styles.profileButton}
-                >
-                  <Ionicons name="ban-outline" size={18} color={colors.danger} />
+                  <Ionicons name="person-outline" size={16} color={colors.ink} />
                 </PressableScale>
               </View>
             </View>
           ))}
+        </View>
 
         <View style={styles.noChatCard}>
           <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.muted} />
@@ -227,47 +211,41 @@ export function VideoNearbyScreen({ profile }: Props) {
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1
+    flex: 1,
+    backgroundColor: colors.surface
   },
   content: {
     padding: 16,
     gap: 14,
     paddingBottom: 28
   },
-  videoPanel: {
-    gap: 12
-  },
-  videoCanvas: {
-    minHeight: 260,
-    borderRadius: 8,
+  topBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 22,
-    gap: 10,
-    backgroundColor: colors.cardDark,
+    justifyContent: 'space-between'
+  },
+  screenTitle: {
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: '900'
+  },
+  videoPanel: {
+    padding: 14,
+    gap: 12,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line
   },
-  videoAvatar: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  videoInitial: {
-    fontSize: 36,
-    fontWeight: '900'
+  videoText: {
+    gap: 4
   },
   videoTitle: {
-    color: colors.ink,
-    fontSize: 22,
-    fontWeight: '900',
-    textAlign: 'center'
+    fontSize: 18,
+    fontWeight: '900'
   },
   videoCopy: {
-    color: colors.muted,
-    textAlign: 'center'
+    color: colors.muted
   },
   videoControls: {
     flexDirection: 'row',
@@ -281,86 +259,91 @@ const styles = StyleSheet.create({
   reportButton: {
     width: 48,
     height: 48,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.dangerSoft
   },
-  nearbyHeader: {
+  memberGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 12
   },
-  nearbyTitle: {
-    fontSize: 21,
-    fontWeight: '900'
-  },
-  nearbySubtitle: {
-    color: colors.muted
-  },
-  locationPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: colors.accent
-  },
-  locationText: {
-    fontWeight: '900',
-    color: colors.background
-  },
-  memberCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 8,
+  memberTile: {
+    width: '48%',
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.line
+  },
+  memberPhoto: {
+    height: 180,
+    padding: 8,
+    justifyContent: 'space-between'
+  },
+  memberImage: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16
+  },
+  distanceBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    minHeight: 26,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.surface
   },
-  memberAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  memberInitial: {
-    fontWeight: '900',
-    fontSize: 19
-  },
-  memberInfo: {
-    flex: 1
-  },
-  memberName: {
+  distanceBadgeText: {
+    fontSize: 11,
     fontWeight: '900'
   },
-  memberMeta: {
-    color: colors.muted,
-    fontSize: 13
+  photoActions: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    gap: 8
+  },
+  photoIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)'
+  },
+  photoLocation: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '800'
+  },
+  memberCaption: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10
+  },
+  memberName: {
+    flex: 1,
+    fontWeight: '800',
+    fontSize: 12
   },
   profileButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
-  },
-  nearbyActions: {
-    flexDirection: 'row',
-    gap: 6
   },
   noChatCard: {
     flexDirection: 'row',
     gap: 10,
     alignItems: 'center',
     padding: 14,
-    borderRadius: 8,
+    borderRadius: 16,
     backgroundColor: colors.surfaceMuted
   },
   noChatText: {

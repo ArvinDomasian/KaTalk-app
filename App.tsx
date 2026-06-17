@@ -82,7 +82,7 @@ export default function App() {
                 <Ionicons
                   name={tab.icon}
                   size={22}
-                  color={isActive ? colors.background : colors.muted}
+                  color={isActive ? colors.onAccent : colors.muted}
                 />
                 <AppText style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
                   {tab.label}
@@ -131,6 +131,6 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   tabLabelActive: {
-    color: colors.background
+    color: colors.onAccent
   }
 });

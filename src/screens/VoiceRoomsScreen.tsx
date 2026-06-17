@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, ImageBackground, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { AppText } from '../components/AppText';
 import { PressableScale } from '../components/PressableScale';
-import { ScreenHeader } from '../components/ScreenHeader';
+import { candidates } from '../data/mockData';
 import { appServices } from '../services/localAppServices';
 import { colors } from '../theme';
 import type { UserProfile, VoiceRoom } from '../types';
@@ -50,13 +50,46 @@ export function VoiceRoomsScreen({ profile }: Props) {
 
   return (
     <View style={styles.root}>
-      <ScreenHeader
-        title="Group Voice Rooms"
-        subtitle={`${profile.nickname}, join when you want and leave anytime.`}
-      />
       <ScrollView contentContainerStyle={styles.content}>
+        <ImageBackground
+          source={{ uri: candidates[2].photoUrl }}
+          imageStyle={styles.heroImage}
+          style={styles.hero}
+        >
+          <View style={styles.heroShade} />
+          <View style={styles.heroTop}>
+            <PressableScale accessibilityRole="button" style={styles.glassButton}>
+              <Ionicons name="arrow-back" size={20} color={colors.onAccent} />
+            </PressableScale>
+            <View style={styles.locationPill}>
+              <AppText style={styles.locationText}>Los Angeles, CA</AppText>
+              <Ionicons name="location" size={14} color={colors.ink} />
+            </View>
+          </View>
+
+          <View style={styles.heroSideActions}>
+            <PressableScale accessibilityRole="button" style={styles.sideIcon}>
+              <Ionicons name="heart" size={20} color={colors.onAccent} />
+            </PressableScale>
+            <PressableScale accessibilityRole="button" style={styles.sideIcon}>
+              <Ionicons name="person" size={20} color={colors.onAccent} />
+            </PressableScale>
+            <PressableScale accessibilityRole="button" style={styles.sideIcon}>
+              <Ionicons name="chatbubble" size={19} color={colors.onAccent} />
+            </PressableScale>
+          </View>
+
+          <View style={styles.heroBottom}>
+            <AppText style={styles.distanceText}>3.5 Km Away</AppText>
+            <AppText style={styles.heroName}>Nearby Voice Rooms</AppText>
+            <AppText style={styles.heroCopy}>
+              Join low-pressure group conversations whenever you feel ready.
+            </AppText>
+          </View>
+        </ImageBackground>
+
         <View style={styles.notice}>
-          <Ionicons name="mic-outline" size={22} color={colors.background} />
+          <Ionicons name="mic-outline" size={22} color={colors.accent} />
           <AppText style={styles.noticeText}>
             Microphone access is requested only when joining or speaking in a room.
           </AppText>
@@ -121,25 +154,98 @@ export function VoiceRoomsScreen({ profile }: Props) {
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1
+    flex: 1,
+    backgroundColor: colors.background
   },
   content: {
     padding: 16,
     gap: 12,
     paddingBottom: 28
   },
+  hero: {
+    minHeight: 510,
+    borderRadius: 34,
+    overflow: 'hidden',
+    justifyContent: 'space-between',
+    padding: 18,
+    backgroundColor: colors.cardDark
+  },
+  heroImage: {
+    borderRadius: 34
+  },
+  heroShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.28)'
+  },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  glassButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.34)'
+  },
+  locationPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 14,
+    minHeight: 38,
+    borderRadius: 19,
+    backgroundColor: colors.surface
+  },
+  locationText: {
+    fontWeight: '800',
+    fontSize: 12
+  },
+  heroSideActions: {
+    alignSelf: 'flex-end',
+    gap: 18
+  },
+  sideIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.24)'
+  },
+  heroBottom: {
+    gap: 6,
+    maxWidth: '92%'
+  },
+  distanceText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  heroName: {
+    color: colors.onAccent,
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: '900'
+  },
+  heroCopy: {
+    color: colors.onAccent,
+    fontSize: 13
+  },
   notice: {
     flexDirection: 'row',
     gap: 10,
     alignItems: 'center',
     padding: 14,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.surface,
     borderRadius: 8
   },
   noticeText: {
     flex: 1,
     fontWeight: '700',
-    color: colors.background
+    color: colors.ink
   },
   roomCard: {
     backgroundColor: colors.surface,

@@ -38,7 +38,7 @@ export function PrimaryButton({
         <Ionicons
           name={icon}
           size={18}
-          color={variant === 'primary' ? colors.background : colors.ink}
+          color={variant === 'primary' ? colors.onAccent : colors.ink}
         />
       ) : null}
       <AppText
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     color: colors.ink
   },
   primaryLabel: {
-    color: colors.background
+    color: colors.onAccent
   },
   disabledLabel: {
     color: colors.muted

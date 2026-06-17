@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
-import { ScreenHeader } from '../components/ScreenHeader';
+import { candidates } from '../data/mockData';
 import type { MessageMatchSession, SavedMatch } from '../services/contracts';
 import { appServices } from '../services/localAppServices';
 import { colors } from '../theme';
@@ -210,36 +210,81 @@ export function MessageMatchScreen({ profile }: Props) {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScreenHeader
-        title="Message Match"
-        subtitle={`Hi ${profile.nickname}. Text-only matching with an automatic 2-minute ending.`}
-      />
-
       {status === 'idle' || status === 'searching' ? (
-        <View style={styles.emptyState}>
-          <View style={styles.orbit}>
-            <Ionicons name="chatbubbles-outline" size={48} color={colors.accent} />
+        <ScrollView contentContainerStyle={styles.chatHome}>
+          <View style={styles.topBar}>
+            <View>
+              <AppText style={styles.screenTitle}>Chatting</AppText>
+              <AppText style={styles.screenSubtitle}>Two-minute text matches</AppText>
+            </View>
+            <PressableScale accessibilityRole="button" style={styles.roundIcon}>
+              <Ionicons name="search-outline" size={21} color={colors.ink} />
+            </PressableScale>
           </View>
-          <AppText style={styles.emptyTitle}>Start a quiet two-minute chat</AppText>
-          <AppText style={styles.emptyCopy}>
-            KaTalk picks one available person. No audio, no camera, and no early change-match button.
-          </AppText>
-          <PrimaryButton
-            label={status === 'searching' ? 'Finding...' : 'Find Chat'}
-            icon="search-outline"
-            disabled={status === 'searching'}
-            onPress={findChat}
-          />
+
+          <View style={styles.sectionHeader}>
+            <AppText style={styles.sectionTitleSmall}>Story</AppText>
+            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyRow}>
+            <View style={styles.storyItem}>
+              <View style={styles.addStory}>
+                <Ionicons name="add" size={24} color={colors.ink} />
+              </View>
+              <AppText style={styles.storyName}>Add Story</AppText>
+            </View>
+            {candidates.map((item) => (
+              <View key={item.id} style={styles.storyItem}>
+                <Image source={{ uri: item.photoUrl }} style={styles.storyImage} />
+                <AppText style={styles.storyName}>{item.nickname}</AppText>
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={styles.featureMatch}>
+            <View>
+              <AppText style={styles.featureTitle}>Ready for a quiet match?</AppText>
+              <AppText style={styles.featureCopy}>Chat ends automatically after 2 minutes.</AppText>
+            </View>
+            <PrimaryButton
+              label={status === 'searching' ? 'Finding...' : 'Find Chat'}
+              icon="chatbubble-outline"
+              disabled={status === 'searching'}
+              onPress={findChat}
+              style={styles.findButton}
+            />
+          </View>
+
+          <View style={styles.sectionHeader}>
+            <AppText style={styles.sectionTitleSmall}>Chat</AppText>
+            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+          </View>
+          <View style={styles.chatList}>
+            {candidates.map((item, index) => (
+              <View key={item.id} style={styles.chatRow}>
+                <Image source={{ uri: item.photoUrl }} style={styles.chatAvatar} />
+                <View style={styles.chatPreview}>
+                  <AppText style={styles.chatName}>{item.nickname}</AppText>
+                  <AppText style={styles.chatSnippet} numberOfLines={1}>
+                    {item.prompt}
+                  </AppText>
+                </View>
+                <View style={styles.chatMeta}>
+                  <AppText style={styles.chatTime}>
+                    {index === 0 ? '11:43 am' : index === 1 ? '09:21 am' : 'Yesterday'}
+                  </AppText>
+                  {index < 2 ? <Ionicons name="checkmark-done" size={16} color={colors.accent} /> : null}
+                </View>
+              </View>
+            ))}
+          </View>
+
           {savedMatches.length > 0 ? (
             <View style={styles.savedCard}>
               <AppText style={styles.savedTitle}>Saved matches</AppText>
               {savedMatches.map((match) => (
                 <View key={match.id} style={styles.savedRow}>
-                  <View style={[styles.savedAvatar, { backgroundColor: match.candidate.avatarColor }]}>
-                    <AppText style={styles.savedInitial}>
-                      {match.candidate.nickname.charAt(0)}
-                    </AppText>
-                  </View>
+                  <Image source={{ uri: match.candidate.photoUrl }} style={styles.savedAvatar} />
                   <View style={styles.savedInfo}>
                     <AppText style={styles.savedName}>Anonymous saved match</AppText>
                     <AppText style={styles.savedMeta}>
@@ -250,15 +295,13 @@ export function MessageMatchScreen({ profile }: Props) {
               ))}
             </View>
           ) : null}
-        </View>
+        </ScrollView>
       ) : null}
 
       {candidate && (status === 'active' || status === 'expired' || status === 'saved') ? (
         <View style={styles.chatArea}>
           <View style={styles.matchHeader}>
-            <View style={[styles.avatar, { backgroundColor: candidate.avatarColor }]}>
-              <AppText style={styles.avatarText}>{candidate.nickname.charAt(0)}</AppText>
-            </View>
+            <Image source={{ uri: candidate.photoUrl }} style={styles.avatarImage} />
             <View style={styles.matchInfo}>
               <AppText style={styles.matchName}>
                 {revealed ? `${candidate.nickname}, ${candidate.age}` : 'Anonymous match'}
@@ -324,7 +367,7 @@ export function MessageMatchScreen({ profile }: Props) {
                 />
               </View>
               <View style={styles.saveStatus}>
-                <Ionicons name="heart-outline" size={17} color={colors.background} />
+                <Ionicons name="heart-outline" size={17} color={colors.onAccent} />
                 <AppText style={styles.saveStatusText}>
                   {matchComplete
                     ? 'Both saved. This chat will move to saved matches after the timer ends.'
@@ -343,7 +386,7 @@ export function MessageMatchScreen({ profile }: Props) {
                   multiline
                 />
                 <PressableScale accessibilityRole="button" onPress={sendMessage} style={styles.sendButton}>
-                  <Ionicons name="send" size={20} color={colors.background} />
+                  <Ionicons name="send" size={20} color={colors.onAccent} />
                 </PressableScale>
               </View>
               <PrimaryButton
@@ -374,32 +417,133 @@ export function MessageMatchScreen({ profile }: Props) {
 
 const styles = StyleSheet.create({
   root: {
-    flex: 1
-  },
-  emptyState: {
     flex: 1,
-    padding: 24,
+    backgroundColor: colors.surface
+  },
+  chatHome: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 26,
+    gap: 16
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  screenTitle: {
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: '900'
+  },
+  screenSubtitle: {
+    color: colors.muted,
+    marginTop: 3
+  },
+  roundIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14
+    borderWidth: 1,
+    borderColor: colors.line
   },
-  orbit: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.accentSoft,
+  sectionHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'space-between'
   },
-  emptyTitle: {
-    fontSize: 24,
-    fontWeight: '900',
+  sectionTitleSmall: {
+    fontSize: 16,
+    fontWeight: '900'
+  },
+  storyRow: {
+    gap: 14,
+    paddingRight: 12
+  },
+  storyItem: {
+    width: 62,
+    alignItems: 'center',
+    gap: 6
+  },
+  addStory: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted
+  },
+  storyImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: colors.accent
+  },
+  storyName: {
+    fontSize: 11,
+    fontWeight: '700',
     textAlign: 'center'
   },
-  emptyCopy: {
-    textAlign: 'center',
+  featureMatch: {
+    borderRadius: 18,
+    backgroundColor: colors.surfaceMuted,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.line
+  },
+  featureTitle: {
+    fontSize: 18,
+    fontWeight: '900'
+  },
+  featureCopy: {
     color: colors.muted,
-    maxWidth: 320
+    marginTop: 3
+  },
+  findButton: {
+    alignSelf: 'flex-start',
+    minWidth: 134
+  },
+  chatList: {
+    gap: 2
+  },
+  chatRow: {
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line
+  },
+  chatAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25
+  },
+  chatPreview: {
+    flex: 1
+  },
+  chatName: {
+    fontWeight: '900'
+  },
+  chatSnippet: {
+    color: colors.muted,
+    marginTop: 3,
+    fontSize: 12
+  },
+  chatMeta: {
+    alignItems: 'flex-end',
+    gap: 4
+  },
+  chatTime: {
+    color: colors.muted,
+    fontSize: 11
   },
   chatArea: {
     flex: 1
@@ -413,16 +557,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.line
   },
-  avatar: {
+  avatarImage: {
     width: 46,
     height: 46,
-    borderRadius: 23,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarText: {
-    fontWeight: '900',
-    fontSize: 20
+    borderRadius: 23
   },
   matchInfo: {
     flex: 1
@@ -475,7 +613,7 @@ const styles = StyleSheet.create({
     color: colors.ink
   },
   myBubbleText: {
-    color: colors.background
+    color: colors.onAccent
   },
   systemText: {
     color: colors.muted,
@@ -506,7 +644,7 @@ const styles = StyleSheet.create({
   },
   saveStatusText: {
     flex: 1,
-    color: colors.background,
+    color: colors.onAccent,
     fontWeight: '800',
     fontSize: 13
   },
@@ -572,12 +710,7 @@ const styles = StyleSheet.create({
   savedAvatar: {
     width: 38,
     height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  savedInitial: {
-    fontWeight: '900'
+    borderRadius: 19
   },
   savedInfo: {
     flex: 1

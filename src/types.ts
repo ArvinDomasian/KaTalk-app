@@ -9,6 +9,8 @@ export type UserProfile = {
   ageRange: string;
   interests: string[];
   comfort: 'shy' | 'balanced' | 'open';
+  authMethod?: 'apple' | 'google' | 'phone';
+  authContact?: string;
   acceptedTerms: boolean;
   acceptedPrivacy: boolean;
   acceptedRules: boolean;
@@ -31,6 +33,7 @@ export type Candidate = {
   interests: string[];
   prompt: string;
   avatarColor: string;
+  photoUrl: string;
 };
 
 export type VoiceRoom = {

@@ -9,7 +9,8 @@ export const candidates: Candidate[] = [
     distanceMiles: 1.2,
     interests: ['slow coffee', 'films', 'quiet walks'],
     prompt: 'Likes first messages that feel calm and specific.',
-    avatarColor: colors.lavender
+    avatarColor: colors.lavender,
+    photoUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'eli',
@@ -18,7 +19,8 @@ export const candidates: Candidate[] = [
     distanceMiles: 2.8,
     interests: ['indie games', 'books', 'night markets'],
     prompt: 'Usually shy at first, warmer after two good questions.',
-    avatarColor: colors.sky
+    avatarColor: colors.sky,
+    photoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'noa',
@@ -27,7 +29,8 @@ export const candidates: Candidate[] = [
     distanceMiles: 4.4,
     interests: ['music', 'food trips', 'dogs'],
     prompt: 'Here for easy conversation, not pressure.',
-    avatarColor: colors.accentSoft
+    avatarColor: colors.accentSoft,
+    photoUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=600&q=80'
   },
   {
     id: 'sana',
@@ -36,7 +39,8 @@ export const candidates: Candidate[] = [
     distanceMiles: 6.1,
     interests: ['photography', 'tea', 'anime'],
     prompt: 'Would rather trade small honest stories than pickup lines.',
-    avatarColor: colors.cardDark
+    avatarColor: colors.cardDark,
+    photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80'
   }
 ];
 

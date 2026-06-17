@@ -1,20 +1,21 @@
 export const colors = {
-  background: '#090B07',
-  surface: '#151713',
-  surfaceMuted: '#252820',
-  ink: '#F8F9EF',
-  muted: '#A8AD9B',
-  line: '#313629',
-  accent: '#E7FF45',
-  accentSoft: '#2D3717',
-  warn: '#F0C85A',
-  danger: '#FF6B7A',
-  dangerSoft: '#3A171C',
-  success: '#A7F06D',
-  lavender: '#332A47',
-  sky: '#17384A',
-  cyan: '#76F4DE',
-  cardDark: '#20221D'
+  background: '#F3F3F5',
+  surface: '#FFFFFF',
+  surfaceMuted: '#F1F2F4',
+  ink: '#101114',
+  muted: '#8B8F98',
+  line: '#E3E5E9',
+  accent: '#1685FF',
+  accentSoft: '#E7F2FF',
+  warn: '#E2A52E',
+  danger: '#FF4D5E',
+  dangerSoft: '#FFECEF',
+  success: '#2EB872',
+  lavender: '#E9E5FF',
+  sky: '#E6F5FF',
+  cyan: '#DFFBF4',
+  cardDark: '#171717',
+  onAccent: '#FFFFFF'
 };
 
 export const spacing = {
