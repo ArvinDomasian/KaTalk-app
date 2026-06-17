@@ -73,7 +73,7 @@ export function RegistrationScreen({ onComplete }: Props) {
             <TextInput
               value={nickname}
               onChangeText={setNickname}
-              placeholder="Example: Arvin"
+              placeholder="Example: Alex"
               placeholderTextColor={colors.muted}
               style={styles.input}
             />
