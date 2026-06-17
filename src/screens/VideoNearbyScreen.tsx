@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { candidates } from '../data/mockData';
+import { appServices } from '../services/localAppServices';
+import type { VideoSession } from '../services/contracts';
 import { colors } from '../theme';
 import type { Candidate, UserProfile } from '../types';
 
@@ -18,13 +19,31 @@ export function VideoNearbyScreen({ profile }: Props) {
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneMuted, setMicrophoneMuted] = useState(true);
   const [activeCandidate, setActiveCandidate] = useState<Candidate | null>(null);
+  const [nearbyMembers, setNearbyMembers] = useState<Candidate[]>([]);
 
-  function startVideo() {
-    const next = candidates[Math.floor(Math.random() * candidates.length)];
-    setActiveCandidate(next);
+  useEffect(() => {
+    void refreshNearby();
+  }, [profile]);
+
+  async function refreshNearby() {
+    const members = await appServices.nearby.list(profile);
+    setNearbyMembers(members);
+  }
+
+  async function startVideo() {
+    let session: VideoSession;
+
+    try {
+      session = await appServices.video.start(profile);
+    } catch {
+      Alert.alert('No video matches available', 'There are no visible video matches right now.');
+      return;
+    }
+
+    setActiveCandidate(session.candidate);
     setInVideo(true);
-    setCameraEnabled(false);
-    setMicrophoneMuted(true);
+    setCameraEnabled(session.cameraStartsEnabled);
+    setMicrophoneMuted(session.microphoneStartsMuted);
   }
 
   function endVideo() {
@@ -35,8 +54,49 @@ export function VideoNearbyScreen({ profile }: Props) {
   }
 
   function reportVideo() {
+    if (activeCandidate) {
+      void appServices.safety.record({
+        source: 'video',
+        action: 'report',
+        targetId: activeCandidate.id,
+        actorId: profile.id
+      });
+    }
     Alert.alert('Report submitted', 'This video session was sent to moderation.');
     endVideo();
+  }
+
+  function blockVideo() {
+    if (activeCandidate) {
+      void appServices.safety.record({
+        source: 'video',
+        action: 'block',
+        targetId: activeCandidate.id,
+        actorId: profile.id
+      });
+    }
+    Alert.alert('Member blocked', 'This member will not appear for you again.');
+    void refreshNearby();
+    endVideo();
+  }
+
+  function handleNearbySafety(action: 'report' | 'block', member: Candidate) {
+    void appServices.safety.record({
+      source: 'nearby_profile',
+      action,
+      targetId: member.id,
+      actorId: profile.id
+    });
+    Alert.alert(
+      action === 'report' ? 'Report submitted' : 'Member blocked',
+      action === 'report'
+        ? 'This nearby profile was sent to moderation.'
+        : 'This member will be hidden from your discovery results.'
+    );
+
+    if (action === 'block') {
+      void refreshNearby();
+    }
   }
 
   return (
@@ -94,6 +154,9 @@ export function VideoNearbyScreen({ profile }: Props) {
                 onPress={endVideo}
                 style={styles.videoControl}
               />
+              <PressableScale accessibilityRole="button" onPress={blockVideo} style={styles.reportButton}>
+                <Ionicons name="ban-outline" size={20} color={colors.danger} />
+              </PressableScale>
               <PressableScale accessibilityRole="button" onPress={reportVideo} style={styles.reportButton}>
                 <Ionicons name="flag-outline" size={20} color={colors.danger} />
               </PressableScale>
@@ -114,10 +177,7 @@ export function VideoNearbyScreen({ profile }: Props) {
           </View>
         </View>
 
-        {candidates
-          .slice()
-          .sort((a, b) => a.distanceMiles - b.distanceMiles)
-          .map((member) => (
+        {nearbyMembers.map((member) => (
             <View key={member.id} style={styles.memberCard}>
               <View style={[styles.memberAvatar, { backgroundColor: member.avatarColor }]}>
                 <AppText style={styles.memberInitial}>{member.nickname.charAt(0)}</AppText>
@@ -128,13 +188,29 @@ export function VideoNearbyScreen({ profile }: Props) {
                   {member.distanceMiles.toFixed(1)} miles away • {member.interests.join(', ')}
                 </AppText>
               </View>
-              <PressableScale
-                accessibilityRole="button"
-                onPress={() => Alert.alert('Profile preview', member.prompt)}
-                style={styles.profileButton}
-              >
-                <Ionicons name="person-outline" size={19} color={colors.ink} />
-              </PressableScale>
+              <View style={styles.nearbyActions}>
+                <PressableScale
+                  accessibilityRole="button"
+                  onPress={() => Alert.alert('Profile preview', member.prompt)}
+                  style={styles.profileButton}
+                >
+                  <Ionicons name="person-outline" size={19} color={colors.ink} />
+                </PressableScale>
+                <PressableScale
+                  accessibilityRole="button"
+                  onPress={() => handleNearbySafety('report', member)}
+                  style={styles.profileButton}
+                >
+                  <Ionicons name="flag-outline" size={18} color={colors.danger} />
+                </PressableScale>
+                <PressableScale
+                  accessibilityRole="button"
+                  onPress={() => handleNearbySafety('block', member)}
+                  style={styles.profileButton}
+                >
+                  <Ionicons name="ban-outline" size={18} color={colors.danger} />
+                </PressableScale>
+              </View>
             </View>
           ))}
 
@@ -193,6 +269,7 @@ const styles = StyleSheet.create({
   },
   videoControls: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     alignItems: 'center'
   },
@@ -271,6 +348,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
+  },
+  nearbyActions: {
+    flexDirection: 'row',
+    gap: 6
   },
   noChatCard: {
     flexDirection: 'row',

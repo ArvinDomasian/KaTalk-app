@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { candidates, openingMessages } from '../data/mockData';
+import type { MessageMatchSession, SavedMatch } from '../services/contracts';
+import { appServices } from '../services/localAppServices';
 import { colors } from '../theme';
 import type { Candidate, MatchStatus, Message, UserProfile } from '../types';
 import { formatTimer } from '../utils/age';
@@ -25,9 +26,19 @@ export function MessageMatchScreen({ profile }: Props) {
   const [savedByMe, setSavedByMe] = useState(false);
   const [savedByMatch, setSavedByMatch] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([]);
   const scrollRef = useRef<ScrollView>(null);
+  const matchCompleteRef = useRef(false);
 
   const matchComplete = savedByMe && savedByMatch;
+
+  useEffect(() => {
+    matchCompleteRef.current = matchComplete;
+  }, [matchComplete]);
+
+  useEffect(() => {
+    void refreshSavedMatches();
+  }, [profile.id]);
 
   useEffect(() => {
     if (status !== 'active') {
@@ -67,15 +78,24 @@ export function MessageMatchScreen({ profile }: Props) {
 
   function findChat() {
     setStatus('searching');
-    setTimeout(() => {
-      const next = candidates[Math.floor(Math.random() * candidates.length)];
-      const opener = openingMessages[Math.floor(Math.random() * openingMessages.length)];
+    setTimeout(async () => {
+      let session: MessageMatchSession;
+
+      try {
+        session = await appServices.messageMatches.start(profile);
+      } catch {
+        setStatus('idle');
+        Alert.alert('No matches available', 'There are no visible message matches right now.');
+        return;
+      }
+
+      const next = session.candidate;
       setCandidate(next);
       setMessages([
         {
           id: 'system-opener',
           sender: 'system',
-          body: `Prompt: ${opener}`,
+          body: `Prompt: ${session.openingPrompt}`,
           sentAt: new Date()
         }
       ]);
@@ -105,19 +125,29 @@ export function MessageMatchScreen({ profile }: Props) {
         return current;
       }
 
+      if (matchCompleteRef.current && candidate) {
+        void appServices.savedMatches.save(profile, candidate).then(refreshSavedMatches);
+      }
+
       setMessages((existing) => [
         ...existing,
         {
           id: `expired-${Date.now()}`,
           sender: 'system',
-          body: matchComplete
+          body: matchCompleteRef.current
             ? 'The 2-minute chat ended. You both saved this match, so it moved to saved chats.'
-            : 'The 2-minute chat ended automatically. You are back on the matching screen.'
+            : 'The 2-minute chat ended automatically. You are back on the matching screen.',
+          sentAt: new Date()
         }
       ]);
 
-      return matchComplete ? 'saved' : 'expired';
+      return matchCompleteRef.current ? 'saved' : 'expired';
     });
+  }
+
+  async function refreshSavedMatches() {
+    const matches = await appServices.savedMatches.list(profile);
+    setSavedMatches(matches);
   }
 
   function sendMessage() {
@@ -154,13 +184,22 @@ export function MessageMatchScreen({ profile }: Props) {
   }
 
   function reportOrBlock(kind: 'reported' | 'blocked') {
+    if (candidate) {
+      void appServices.safety.record({
+        source: 'message_match',
+        action: kind === 'reported' ? 'report' : 'block',
+        targetId: candidate.id,
+        actorId: profile.id
+      });
+    }
+
     setMessages((current) => [
       ...current,
       {
         id: `${kind}-${Date.now()}`,
         sender: 'system',
-        body: `This match was ${kind}. Future matching with this member is disabled.`
-      sentAt: new Date()
+        body: `This match was ${kind}. Future matching with this member is disabled.`,
+        sentAt: new Date()
       }
     ]);
     setStatus('expired');
@@ -191,6 +230,26 @@ export function MessageMatchScreen({ profile }: Props) {
             disabled={status === 'searching'}
             onPress={findChat}
           />
+          {savedMatches.length > 0 ? (
+            <View style={styles.savedCard}>
+              <AppText style={styles.savedTitle}>Saved matches</AppText>
+              {savedMatches.map((match) => (
+                <View key={match.id} style={styles.savedRow}>
+                  <View style={[styles.savedAvatar, { backgroundColor: match.candidate.avatarColor }]}>
+                    <AppText style={styles.savedInitial}>
+                      {match.candidate.nickname.charAt(0)}
+                    </AppText>
+                  </View>
+                  <View style={styles.savedInfo}>
+                    <AppText style={styles.savedName}>Anonymous saved match</AppText>
+                    <AppText style={styles.savedMeta}>
+                      {match.candidate.interests.join(' • ')}
+                    </AppText>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -263,6 +322,16 @@ export function MessageMatchScreen({ profile }: Props) {
                   onPress={() => reportOrBlock('reported')}
                   style={styles.quickButton}
                 />
+              </View>
+              <View style={styles.saveStatus}>
+                <Ionicons name="heart-outline" size={17} color={colors.accent} />
+                <AppText style={styles.saveStatusText}>
+                  {matchComplete
+                    ? 'Both saved. This chat will move to saved matches after the timer ends.'
+                    : savedByMe
+                      ? 'You saved. Waiting for the other person before the timer ends.'
+                      : 'Save only works if both people choose it before time runs out.'}
+                </AppText>
               </View>
               <View style={styles.inputRow}>
                 <TextInput
@@ -426,6 +495,21 @@ const styles = StyleSheet.create({
   quickButton: {
     flex: 1
   },
+  saveStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: colors.accentSoft
+  },
+  saveStatusText: {
+    flex: 1,
+    color: colors.accent,
+    fontWeight: '800',
+    fontSize: 13
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -464,5 +548,45 @@ const styles = StyleSheet.create({
   },
   endedCopy: {
     color: colors.muted
+  },
+  savedCard: {
+    width: '100%',
+    maxWidth: 360,
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    gap: 10
+  },
+  savedTitle: {
+    fontWeight: '900',
+    fontSize: 16
+  },
+  savedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  savedAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  savedInitial: {
+    fontWeight: '900'
+  },
+  savedInfo: {
+    flex: 1
+  },
+  savedName: {
+    fontWeight: '900'
+  },
+  savedMeta: {
+    color: colors.muted,
+    fontSize: 12
   }
 });

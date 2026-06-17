@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { AppText } from '../components/AppText';
 import { PressableScale } from '../components/PressableScale';
 import { ScreenHeader } from '../components/ScreenHeader';
-import { rooms as seededRooms } from '../data/mockData';
+import { appServices } from '../services/localAppServices';
 import { colors } from '../theme';
 import type { UserProfile, VoiceRoom } from '../types';
 
@@ -14,8 +14,12 @@ type Props = {
 };
 
 export function VoiceRoomsScreen({ profile }: Props) {
-  const [rooms, setRooms] = useState<VoiceRoom[]>(seededRooms);
+  const [rooms, setRooms] = useState<VoiceRoom[]>([]);
   const [muted, setMuted] = useState(true);
+
+  useEffect(() => {
+    void appServices.rooms.list().then(setRooms);
+  }, []);
 
   function toggleJoin(roomId: string) {
     setRooms((current) =>
@@ -35,6 +39,12 @@ export function VoiceRoomsScreen({ profile }: Props) {
   }
 
   function reportRoom(room: VoiceRoom) {
+    void appServices.safety.record({
+      source: 'voice_room',
+      action: 'report',
+      targetId: room.id,
+      actorId: profile.id
+    });
     Alert.alert('Report submitted', `${room.title} was sent to the moderation queue.`);
   }
 
