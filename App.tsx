@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { RegistrationScreen } from './src/screens/RegistrationScreen';
 import { MessageMatchScreen } from './src/screens/MessageMatchScreen';
 import { VoiceRoomsScreen } from './src/screens/VoiceRoomsScreen';
 import { VideoNearbyScreen } from './src/screens/VideoNearbyScreen';
+import { LoadingScreen } from './src/screens/LoadingScreen';
 import { AppText } from './src/components/AppText';
 import { PressableScale } from './src/components/PressableScale';
 import { colors } from './src/theme';
@@ -20,11 +21,35 @@ const tabs: Array<{ key: ActiveTab; label: string; icon: keyof typeof Ionicons.g
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isEnteringApp, setIsEnteringApp] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('message');
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimerRef.current) {
+        clearTimeout(transitionTimerRef.current);
+      }
+    };
+  }, []);
+
+  function completeRegistration(nextProfile: UserProfile) {
+    setIsEnteringApp(true);
+    setActiveTab('message');
+
+    transitionTimerRef.current = setTimeout(() => {
+      setProfile(nextProfile);
+      setIsEnteringApp(false);
+    }, 1400);
+  }
 
   const activeScreen = useMemo(() => {
+    if (isEnteringApp) {
+      return <LoadingScreen />;
+    }
+
     if (!profile) {
-      return <RegistrationScreen onComplete={setProfile} />;
+      return <RegistrationScreen onComplete={completeRegistration} />;
     }
 
     if (activeTab === 'message') {
@@ -36,13 +61,13 @@ export default function App() {
     }
 
     return <VideoNearbyScreen profile={profile} />;
-  }, [activeTab, profile]);
+  }, [activeTab, isEnteringApp, profile]);
 
   return (
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" />
       <View style={styles.shell}>{activeScreen}</View>
-      {profile ? (
+      {profile && !isEnteringApp ? (
         <View style={styles.tabBar}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -57,7 +82,7 @@ export default function App() {
                 <Ionicons
                   name={tab.icon}
                   size={22}
-                  color={isActive ? colors.ink : colors.muted}
+                  color={isActive ? colors.background : colors.muted}
                 />
                 <AppText style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
                   {tab.label}
@@ -87,7 +112,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: colors.line,
-    backgroundColor: colors.surface
+    backgroundColor: colors.background
   },
   tabButton: {
     flex: 1,
@@ -98,7 +123,7 @@ const styles = StyleSheet.create({
     gap: 4
   },
   tabButtonActive: {
-    backgroundColor: colors.accentSoft
+    backgroundColor: colors.accent
   },
   tabLabel: {
     fontSize: 12,
@@ -106,6 +131,6 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   tabLabelActive: {
-    color: colors.ink
+    color: colors.background
   }
 });

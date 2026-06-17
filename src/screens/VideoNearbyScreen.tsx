@@ -172,7 +172,7 @@ export function VideoNearbyScreen({ profile }: Props) {
             <AppText style={styles.nearbySubtitle}>Distance only. No map pins, no live tracking.</AppText>
           </View>
           <View style={styles.locationPill}>
-            <Ionicons name="location-outline" size={16} color={colors.accent} />
+            <Ionicons name="location-outline" size={16} color={colors.background} />
             <AppText style={styles.locationText}>On</AppText>
           </View>
         </View>
@@ -244,7 +244,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 22,
     gap: 10,
-    backgroundColor: colors.ink
+    backgroundColor: colors.cardDark,
+    borderWidth: 1,
+    borderColor: colors.line
   },
   videoAvatar: {
     width: 86,
@@ -258,13 +260,13 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   videoTitle: {
-    color: colors.surface,
+    color: colors.ink,
     fontSize: 22,
     fontWeight: '900',
     textAlign: 'center'
   },
   videoCopy: {
-    color: '#DADBD6',
+    color: colors.muted,
     textAlign: 'center'
   },
   videoControls: {
@@ -282,7 +284,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F6DADD'
+    backgroundColor: colors.dangerSoft
   },
   nearbyHeader: {
     flexDirection: 'row',
@@ -304,11 +306,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: colors.accentSoft
+    backgroundColor: colors.accent
   },
   locationText: {
     fontWeight: '900',
-    color: colors.accent
+    color: colors.background
   },
   memberCard: {
     flexDirection: 'row',

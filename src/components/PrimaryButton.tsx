@@ -38,7 +38,7 @@ export function PrimaryButton({
         <Ionicons
           name={icon}
           size={18}
-          color={variant === 'primary' ? colors.surface : colors.ink}
+          color={variant === 'primary' ? colors.background : colors.ink}
         />
       ) : null}
       <AppText
@@ -71,17 +71,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted
   },
   danger: {
-    backgroundColor: '#F6DADD'
+    backgroundColor: colors.dangerSoft
   },
   disabled: {
-    backgroundColor: colors.line
+    backgroundColor: colors.surfaceMuted
   },
   label: {
     fontWeight: '800',
     color: colors.ink
   },
   primaryLabel: {
-    color: colors.surface
+    color: colors.background
   },
   disabledLabel: {
     color: colors.muted

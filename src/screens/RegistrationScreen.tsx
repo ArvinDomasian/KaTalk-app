@@ -284,7 +284,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted
   },
   segmentActive: {
-    backgroundColor: colors.accentSoft
+    backgroundColor: colors.accent
   },
   segmentText: {
     fontWeight: '800',
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     textTransform: 'capitalize'
   },
   segmentTextActive: {
-    color: colors.ink
+    color: colors.background
   },
   safetyLine: {
     flexDirection: 'row',

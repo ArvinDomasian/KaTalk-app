@@ -56,7 +56,7 @@ export function VoiceRoomsScreen({ profile }: Props) {
       />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.notice}>
-          <Ionicons name="mic-outline" size={22} color={colors.accent} />
+          <Ionicons name="mic-outline" size={22} color={colors.background} />
           <AppText style={styles.noticeText}>
             Microphone access is requested only when joining or speaking in a room.
           </AppText>
@@ -133,12 +133,13 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'center',
     padding: 14,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: colors.accent,
     borderRadius: 8
   },
   noticeText: {
     flex: 1,
-    fontWeight: '700'
+    fontWeight: '700',
+    color: colors.background
   },
   roomCard: {
     backgroundColor: colors.surface,
@@ -205,7 +206,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F6DADD'
+    backgroundColor: colors.dangerSoft
   },
   policyCard: {
     backgroundColor: colors.surface,

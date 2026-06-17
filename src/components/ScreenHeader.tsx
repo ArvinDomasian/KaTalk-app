@@ -21,11 +21,11 @@ export function ScreenHeader({ title, subtitle }: Props) {
 const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: 14,
+    paddingTop: 24,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
-    backgroundColor: colors.surface
+    backgroundColor: colors.background
   },
   brand: {
     color: colors.accent,

@@ -324,7 +324,7 @@ export function MessageMatchScreen({ profile }: Props) {
                 />
               </View>
               <View style={styles.saveStatus}>
-                <Ionicons name="heart-outline" size={17} color={colors.accent} />
+                <Ionicons name="heart-outline" size={17} color={colors.background} />
                 <AppText style={styles.saveStatusText}>
                   {matchComplete
                     ? 'Both saved. This chat will move to saved matches after the timer ends.'
@@ -343,7 +343,7 @@ export function MessageMatchScreen({ profile }: Props) {
                   multiline
                 />
                 <PressableScale accessibilityRole="button" onPress={sendMessage} style={styles.sendButton}>
-                  <Ionicons name="send" size={20} color={colors.surface} />
+                  <Ionicons name="send" size={20} color={colors.background} />
                 </PressableScale>
               </View>
               <PrimaryButton
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     color: colors.ink
   },
   myBubbleText: {
-    color: colors.surface
+    color: colors.background
   },
   systemText: {
     color: colors.muted,
@@ -502,11 +502,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
     borderRadius: 8,
-    backgroundColor: colors.accentSoft
+    backgroundColor: colors.accent
   },
   saveStatusText: {
     flex: 1,
-    color: colors.accent,
+    color: colors.background,
     fontWeight: '800',
     fontSize: 13
   },

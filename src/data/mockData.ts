@@ -36,7 +36,7 @@ export const candidates: Candidate[] = [
     distanceMiles: 6.1,
     interests: ['photography', 'tea', 'anime'],
     prompt: 'Would rather trade small honest stories than pickup lines.',
-    avatarColor: '#F4E1D2'
+    avatarColor: colors.cardDark
   }
 ];
 
