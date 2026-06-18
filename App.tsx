@@ -7,21 +7,27 @@ import { RegistrationScreen } from './src/screens/RegistrationScreen';
 import { MessageMatchScreen } from './src/screens/MessageMatchScreen';
 import { VoiceRoomsScreen } from './src/screens/VoiceRoomsScreen';
 import { VideoNearbyScreen } from './src/screens/VideoNearbyScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
 import { LoadingScreen } from './src/screens/LoadingScreen';
 import { AppText } from './src/components/AppText';
 import { PressableScale } from './src/components/PressableScale';
+import { signOutCurrentUser } from './src/services/firebaseAuthService';
+import { saveFirebaseUserProfile } from './src/services/firebaseProfileService';
+import { clearStoredProfile, loadStoredProfile, saveStoredProfile } from './src/services/profileStorage';
 import { colors } from './src/theme';
 import type { ActiveTab, UserProfile } from './src/types';
 
 const tabs: Array<{ key: ActiveTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { key: 'message', label: 'Message', icon: 'chatbubbles-outline' },
   { key: 'rooms', label: 'Rooms', icon: 'mic-outline' },
-  { key: 'video', label: 'Video', icon: 'videocam-outline' }
+  { key: 'video', label: 'Video', icon: 'videocam-outline' },
+  { key: 'profile', label: 'Profile', icon: 'person-circle-outline' }
 ];
 
 export default function App() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(() => loadStoredProfile());
   const [isEnteringApp, setIsEnteringApp] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('message');
   const [isMessageChatting, setIsMessageChatting] = useState(false);
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -35,6 +41,8 @@ export default function App() {
   }, []);
 
   function completeRegistration(nextProfile: UserProfile) {
+    saveStoredProfile(nextProfile);
+    void saveFirebaseUserProfile(nextProfile);
     setIsEnteringApp(true);
     setActiveTab('message');
     setIsMessageChatting(false);
@@ -45,7 +53,48 @@ export default function App() {
     }, 1400);
   }
 
+  async function logOut() {
+    if (transitionTimerRef.current) {
+      clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+    }
+
+    setIsLoggingOut(true);
+    setIsEnteringApp(false);
+    setIsMessageChatting(false);
+    clearStoredProfile();
+
+    await Promise.all([
+      signOutCurrentUser().catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 1100))
+    ]);
+
+    setProfile(null);
+    setActiveTab('message');
+    setIsLoggingOut(false);
+  }
+
+  function updateProfile(nextProfile: UserProfile) {
+    setProfile(nextProfile);
+    saveStoredProfile(nextProfile);
+    void saveFirebaseUserProfile(nextProfile);
+  }
+
   const activeScreen = useMemo(() => {
+    if (isLoggingOut) {
+      return (
+        <LoadingScreen
+          title="You're now logging out"
+          subtitle="Clearing this account so another one can sign in."
+          steps={[
+            { icon: 'log-out-outline', label: 'Signing out' },
+            { icon: 'lock-closed-outline', label: 'Clearing saved session' },
+            { icon: 'person-circle-outline', label: 'Returning to login' }
+          ]}
+        />
+      );
+    }
+
     if (isEnteringApp) {
       return <LoadingScreen />;
     }
@@ -67,8 +116,12 @@ export default function App() {
       return <VoiceRoomsScreen profile={profile} />;
     }
 
-    return <VideoNearbyScreen profile={profile} />;
-  }, [activeTab, isEnteringApp, profile]);
+    if (activeTab === 'video') {
+      return <VideoNearbyScreen profile={profile} />;
+    }
+
+    return <ProfileScreen profile={profile} onLogout={logOut} onProfileUpdate={updateProfile} />;
+  }, [activeTab, isEnteringApp, isLoggingOut, profile]);
 
   useEffect(() => {
     if (activeTab !== 'message') {
@@ -76,7 +129,7 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const shouldShowTabs = Boolean(profile && !isEnteringApp && !isMessageChatting);
+  const shouldShowTabs = Boolean(profile && !isEnteringApp && !isLoggingOut && !isMessageChatting);
 
   return (
     <SafeAreaView style={styles.root}>

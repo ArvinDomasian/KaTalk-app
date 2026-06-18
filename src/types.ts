@@ -1,8 +1,9 @@
-export type ActiveTab = 'message' | 'rooms' | 'video';
+export type ActiveTab = 'message' | 'rooms' | 'video' | 'profile';
 
 export type UserProfile = {
   id: string;
   nickname: string;
+  avatarUrl?: string;
   dateOfBirth: string;
   gender: string;
   preference: string;
@@ -43,4 +44,13 @@ export type VoiceRoom = {
   participants: number;
   isJoined: boolean;
   host: string;
+};
+
+export type ProfilePost = {
+  id: string;
+  profileId: string;
+  authorNickname: string;
+  body: string;
+  photoUrl?: string;
+  createdAt: Date;
 };

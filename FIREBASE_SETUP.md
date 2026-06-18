@@ -38,6 +38,8 @@ EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=123456789
 EXPO_PUBLIC_FIREBASE_APP_ID=1:123456789:web:abcdef
 ```
 
+Do not include JavaScript quotes or trailing commas in `.env`.
+
 ## 4. Enable email login
 
 In Firebase Console:
@@ -47,3 +49,11 @@ In Firebase Console:
 ## 5. Restart Expo
 
 Stop the current Expo server completely, then start it again. Expo reads `.env` only when it starts.
+
+## 6. Test delivery
+
+After tapping `Send Verification Email`, check Gmail Inbox, Spam, and Promotions. The sender is usually a Firebase/no-reply address connected to your Firebase project, not a personal Gmail account.
+
+## Login note
+
+New KaTalk registrations ask for a password so returning users can log in with Gmail/email and password. If you created a test account before the password field existed, use `Reset Password` on the login form.

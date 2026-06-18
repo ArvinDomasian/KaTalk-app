@@ -1,17 +1,37 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import { candidates } from '../data/mockData';
 import type { MessageMatchSession, SavedMatch } from '../services/contracts';
+import {
+  closeLiveMessageMatch,
+  recordLiveMessageSafety,
+  saveLiveMessageMatch,
+  sendLiveMessage,
+  startLiveMessageMatching,
+  subscribeLiveMatchState,
+  subscribeLiveMessages
+} from '../services/firebaseMessageMatchService';
 import { appServices } from '../services/localAppServices';
 import { colors } from '../theme';
 import type { Candidate, MatchStatus, Message, UserProfile } from '../types';
 import { formatTimer } from '../utils/age';
 
 const MATCH_SECONDS = 120;
+const RETURN_TO_MATCHING_DELAY_MS = 1600;
 
 type Props = {
   profile: UserProfile;
@@ -26,10 +46,18 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
   const [draft, setDraft] = useState('');
   const [savedByMe, setSavedByMe] = useState(false);
   const [savedByMatch, setSavedByMatch] = useState(false);
-  const [revealed, setRevealed] = useState(false);
   const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([]);
+  const [liveMatchId, setLiveMatchId] = useState<string | null>(null);
+  const [matchEndsAtMs, setMatchEndsAtMs] = useState<number | null>(null);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [homeNotice, setHomeNotice] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const matchCompleteRef = useRef(false);
+  const returnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isEndingRef = useRef(false);
+  const liveQueueUnsubscribeRef = useRef<null | (() => void)>(null);
+  const liveMessagesUnsubscribeRef = useRef<null | (() => void)>(null);
+  const liveStateUnsubscribeRef = useRef<null | (() => void)>(null);
 
   const matchComplete = savedByMe && savedByMatch;
 
@@ -46,28 +74,34 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
   }, [onChattingStateChange, status]);
 
   useEffect(() => {
-    return () => onChattingStateChange?.(false);
+    return () => {
+      clearLiveSubscriptions();
+      clearReturnTimer();
+      onChattingStateChange?.(false);
+    };
   }, [onChattingStateChange]);
 
   useEffect(() => {
-    if (status !== 'active') {
+    if (status !== 'active' || !matchEndsAtMs) {
       return undefined;
     }
 
-    const interval = setInterval(() => {
-      setSecondsLeft((current) => {
-        if (current <= 1) {
-          clearInterval(interval);
-          expireMatch();
-          return 0;
-        }
+    function syncTimer() {
+      const nextSecondsLeft = Math.max(0, Math.ceil(((matchEndsAtMs ?? Date.now()) - Date.now()) / 1000));
+      setSecondsLeft(nextSecondsLeft);
 
-        return current - 1;
-      });
+      if (nextSecondsLeft <= 0) {
+        expireMatch();
+      }
+    }
+
+    syncTimer();
+    const interval = setInterval(() => {
+      syncTimer();
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [status]);
+  }, [matchEndsAtMs, status]);
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });
@@ -85,35 +119,54 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     return colors.accent;
   }, [secondsLeft]);
 
-  function findChat() {
-    setStatus('searching');
-    setTimeout(async () => {
-      let session: MessageMatchSession;
+  function clearLiveSubscriptions() {
+    liveQueueUnsubscribeRef.current?.();
+    liveMessagesUnsubscribeRef.current?.();
+    liveStateUnsubscribeRef.current?.();
+    liveQueueUnsubscribeRef.current = null;
+    liveMessagesUnsubscribeRef.current = null;
+    liveStateUnsubscribeRef.current = null;
+  }
 
-      try {
-        session = await appServices.messageMatches.start(profile);
-      } catch {
-        setStatus('idle');
-        Alert.alert('No matches available', 'There are no visible message matches right now.');
-        return;
+  function clearReturnTimer() {
+    if (returnTimerRef.current) {
+      clearTimeout(returnTimerRef.current);
+      returnTimerRef.current = null;
+    }
+  }
+
+  function scheduleReturnToMatching(notice: string) {
+    clearReturnTimer();
+    returnTimerRef.current = setTimeout(() => {
+      resetToIdle(notice);
+    }, RETURN_TO_MATCHING_DELAY_MS);
+  }
+
+  function startMatchedSession(session: MessageMatchSession, isLive: boolean) {
+    const next = session.candidate;
+    const endsAtMs = session.endsAt.getTime();
+
+    clearReturnTimer();
+    isEndingRef.current = false;
+    setCandidate(next);
+    setMessages([
+      {
+        id: 'system-opener',
+        sender: 'system',
+        body: `Prompt: ${session.openingPrompt}`,
+        sentAt: new Date()
       }
+    ]);
+    setSavedByMe(false);
+    setSavedByMatch(false);
+    setMatchEndsAtMs(endsAtMs);
+    setSecondsLeft(Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000)));
+    setSearchMessage(null);
+    setHomeNotice(null);
+    setStatus('active');
 
-      const next = session.candidate;
-      setCandidate(next);
-      setMessages([
-        {
-          id: 'system-opener',
-          sender: 'system',
-          body: `Prompt: ${session.openingPrompt}`,
-          sentAt: new Date()
-        }
-      ]);
-      setSavedByMe(false);
-      setSavedByMatch(false);
-      setRevealed(false);
-      setSecondsLeft(MATCH_SECONDS);
-      setStatus('active');
-
+    if (!isLive) {
+      setLiveMatchId(null);
       setTimeout(() => {
         setMessages((current) => [
           ...current,
@@ -125,16 +178,92 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
           }
         ]);
       }, 900);
-    }, 700);
+      return;
+    }
+
+    setLiveMatchId(session.id);
+    liveMessagesUnsubscribeRef.current = subscribeLiveMessages(
+      session.id,
+      setMessages,
+      (message) => Alert.alert('Live chat issue', message)
+    );
+    liveStateUnsubscribeRef.current = subscribeLiveMatchState(
+      session.id,
+      (state) => {
+        setSavedByMe(state.savedByMe);
+        setSavedByMatch(state.savedByMatch);
+        setMatchEndsAtMs(state.endsAtMs);
+
+        if (state.status !== 'active') {
+          endMatchFromServer(state.status);
+        }
+      },
+      (message) => Alert.alert('Live match issue', message)
+    );
+  }
+
+  function findChat() {
+    clearLiveSubscriptions();
+    clearReturnTimer();
+    isEndingRef.current = false;
+    setStatus('searching');
+    setCandidate(null);
+    setLiveMatchId(null);
+    setMatchEndsAtMs(null);
+    setSearchMessage('Looking for a real KaTalk member...');
+    setHomeNotice(null);
+    setMessages([
+      {
+        id: 'searching-real',
+        sender: 'system',
+        body: 'Looking for a real KaTalk member...',
+        sentAt: new Date()
+      }
+    ]);
+
+    liveQueueUnsubscribeRef.current = startLiveMessageMatching(profile, {
+      onWaiting(message) {
+        setSearchMessage(message);
+        setMessages([
+          {
+            id: 'waiting-real',
+            sender: 'system',
+            body: message,
+            sentAt: new Date()
+          }
+        ]);
+      },
+      onMatched(session) {
+        liveQueueUnsubscribeRef.current = null;
+        startMatchedSession(session, true);
+      },
+      onError(message) {
+        setStatus('idle');
+        setSearchMessage(null);
+        setHomeNotice(message);
+        setMessages([]);
+        Alert.alert('Real matching setup needed', message);
+      }
+    });
   }
 
   function expireMatch() {
+    if (isEndingRef.current) {
+      return;
+    }
+
+    isEndingRef.current = true;
+
     setStatus((current) => {
       if (current !== 'active') {
         return current;
       }
 
-      if (matchCompleteRef.current && candidate) {
+      clearLiveSubscriptions();
+
+      if (liveMatchId) {
+        void closeLiveMessageMatch(liveMatchId, matchCompleteRef.current ? 'saved' : 'expired');
+      } else if (matchCompleteRef.current && candidate) {
         void appServices.savedMatches.save(profile, candidate).then(refreshSavedMatches);
       }
 
@@ -150,8 +279,49 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
         }
       ]);
 
+      scheduleReturnToMatching(
+        matchCompleteRef.current
+          ? 'Last chat ended. You both saved the match.'
+          : 'Last 2-minute chat ended automatically.'
+      );
+
       return matchCompleteRef.current ? 'saved' : 'expired';
     });
+  }
+
+  function endMatchFromServer(serverStatus: 'active' | 'expired' | 'saved' | 'blocked') {
+    if (serverStatus === 'active' || isEndingRef.current) {
+      return;
+    }
+
+    isEndingRef.current = true;
+    clearLiveSubscriptions();
+
+    const nextStatus = serverStatus === 'saved' ? 'saved' : 'expired';
+    const body =
+      serverStatus === 'blocked'
+        ? 'This chat was ended by a block action. Returning to matching.'
+        : serverStatus === 'saved'
+          ? 'The 2-minute chat ended and both people saved the match. Returning to matching.'
+          : 'The 2-minute chat ended automatically. Returning to matching.';
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: `server-ended-${Date.now()}`,
+        sender: 'system',
+        body,
+        sentAt: new Date()
+      }
+    ]);
+    setStatus(nextStatus);
+    scheduleReturnToMatching(
+      serverStatus === 'saved'
+        ? 'Last chat ended. You both saved the match.'
+        : serverStatus === 'blocked'
+          ? 'That member was blocked. You will not match with them again.'
+          : 'Last 2-minute chat ended automatically.'
+    );
   }
 
   async function refreshSavedMatches() {
@@ -159,10 +329,22 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     setSavedMatches(matches);
   }
 
-  function sendMessage() {
+  async function sendMessage() {
     const text = draft.trim();
 
     if (!text || status !== 'active') {
+      return;
+    }
+
+    if (liveMatchId) {
+      setDraft('');
+
+      try {
+        await sendLiveMessage(liveMatchId, text);
+      } catch {
+        Alert.alert('Message not sent', 'Live chat could not send this message yet.');
+        setDraft(text);
+      }
       return;
     }
 
@@ -182,14 +364,20 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     }
   }
 
-  function resetToIdle() {
+  function resetToIdle(notice?: string) {
+    clearReturnTimer();
+    clearLiveSubscriptions();
+    isEndingRef.current = false;
     setStatus('idle');
     setCandidate(null);
     setMessages([]);
     setSecondsLeft(MATCH_SECONDS);
     setSavedByMe(false);
     setSavedByMatch(false);
-    setRevealed(false);
+    setLiveMatchId(null);
+    setMatchEndsAtMs(null);
+    setSearchMessage(null);
+    setHomeNotice(notice ?? null);
   }
 
   function confirmReportOrBlock(kind: 'reported' | 'blocked') {
@@ -219,6 +407,13 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
       });
     }
 
+    if (liveMatchId) {
+      void recordLiveMessageSafety(liveMatchId, kind === 'reported' ? 'report' : 'block');
+    }
+
+    isEndingRef.current = true;
+    clearLiveSubscriptions();
+
     setMessages((current) => [
       ...current,
       {
@@ -229,6 +424,11 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
       }
     ]);
     setStatus('expired');
+    scheduleReturnToMatching(
+      kind === 'blocked'
+        ? 'That member was blocked. You will not match with them again.'
+        : 'Thanks for reporting. The chat was closed.'
+    );
   }
 
   return (
@@ -268,9 +468,23 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
 
           <View style={styles.featureMatch}>
             <View>
-              <AppText style={styles.featureTitle}>Ready for a quiet match?</AppText>
-              <AppText style={styles.featureCopy}>Chat ends automatically after 2 minutes.</AppText>
+              <AppText style={styles.featureTitle}>Ready for a real match?</AppText>
+              <AppText style={styles.featureCopy}>
+                Connect with another KaTalk member. Chat ends automatically after 2 minutes.
+              </AppText>
             </View>
+            {homeNotice ? (
+              <View style={styles.homeNotice}>
+                <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+                <AppText style={styles.homeNoticeText}>{homeNotice}</AppText>
+              </View>
+            ) : null}
+            {searchMessage ? (
+              <View style={styles.matchStatusRow}>
+                {status === 'searching' ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+                <AppText style={styles.matchStatusText}>{searchMessage}</AppText>
+              </View>
+            ) : null}
             <PrimaryButton
               label={status === 'searching' ? 'Finding...' : 'Find Chat'}
               icon="chatbubble-outline"
@@ -313,7 +527,7 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
                   <View style={styles.savedInfo}>
                     <AppText style={styles.savedName}>Anonymous saved match</AppText>
                     <AppText style={styles.savedMeta}>
-                      {match.candidate.interests.join(' • ')}
+                      {match.candidate.interests.join(' / ')}
                     </AppText>
                   </View>
                 </View>
@@ -328,11 +542,9 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
           <View style={styles.matchHeader}>
             <Image source={{ uri: candidate.photoUrl }} style={styles.avatarImage} />
             <View style={styles.matchInfo}>
-              <AppText style={styles.matchName}>
-                {revealed ? `${candidate.nickname}, ${candidate.age}` : 'Anonymous match'}
-              </AppText>
+              <AppText style={styles.matchName}>Anonymous match</AppText>
               <AppText style={styles.matchMeta}>
-                {candidate.interests.join(' • ')}
+                {candidate.interests.join(' / ')}
               </AppText>
             </View>
             <View style={[styles.timerPill, { borderColor: timerTone }]}>
@@ -373,14 +585,23 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
                   label={savedByMe ? 'Saved' : 'Save'}
                   icon="heart-outline"
                   variant="secondary"
-                  onPress={() => setSavedByMe(true)}
+                  onPress={() => {
+                    if (liveMatchId) {
+                      void saveLiveMessageMatch(liveMatchId).catch(() =>
+                        Alert.alert('Save failed', 'Could not save this live match yet.')
+                      );
+                      return;
+                    }
+
+                    setSavedByMe(true);
+                  }}
                   style={styles.quickButton}
                 />
                 <PrimaryButton
-                  label={revealed ? 'Revealed' : 'Reveal'}
-                  icon="eye-outline"
-                  variant="secondary"
-                  onPress={() => setRevealed(true)}
+                  label="Block"
+                  icon="ban-outline"
+                  variant="danger"
+                  onPress={() => confirmReportOrBlock('blocked')}
                   style={styles.quickButton}
                 />
                 <PrimaryButton
@@ -414,12 +635,6 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
                   <Ionicons name="send" size={20} color={colors.onAccent} />
                 </PressableScale>
               </View>
-              <PrimaryButton
-                label="Block"
-                icon="ban-outline"
-                variant="danger"
-                onPress={() => confirmReportOrBlock('blocked')}
-              />
             </View>
           ) : (
             <View style={styles.endedPanel}>
@@ -428,10 +643,10 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
               </AppText>
               <AppText style={styles.endedCopy}>
                 {status === 'saved'
-                  ? 'Both people saved before the timer ended. This would now appear in saved chats.'
-                  : 'The chat closed automatically after 2 minutes.'}
+                  ? 'Both people saved before the timer ended. Returning to matching.'
+                  : 'The chat closed automatically after 2 minutes. Returning to matching.'}
               </AppText>
-              <PrimaryButton label="Find New Chat" icon="refresh-outline" onPress={resetToIdle} />
+              <PrimaryButton label="Back To Matching" icon="refresh-outline" onPress={() => resetToIdle()} />
             </View>
           )}
         </View>
@@ -530,6 +745,42 @@ const styles = StyleSheet.create({
   featureCopy: {
     color: colors.muted,
     marginTop: 3
+  },
+  homeNotice: {
+    minHeight: 44,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EAF8F0'
+  },
+  homeNoticeText: {
+    flex: 1,
+    color: colors.success,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
+  },
+  matchStatusRow: {
+    minHeight: 44,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.line
+  },
+  matchStatusText: {
+    flex: 1,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
   },
   findButton: {
     alignSelf: 'flex-start',

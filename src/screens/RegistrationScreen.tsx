@@ -1,12 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Image, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import type { GestureResponderEvent, LayoutChangeEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import { candidates } from '../data/mockData';
-import { confirmEmailVerification, startEmailVerification } from '../services/firebaseAuthService';
+import {
+  confirmEmailVerification,
+  getCurrentFirebaseUserId,
+  resendEmailVerification,
+  sendEmailPasswordReset,
+  signInWithEmail,
+  startEmailVerification
+} from '../services/firebaseAuthService';
+import { loadCurrentFirebaseUserProfile } from '../services/firebaseProfileService';
 import { colors } from '../theme';
 import type { UserProfile } from '../types';
 import { isAdult } from '../utils/age';
@@ -143,7 +151,7 @@ export function RegistrationScreen({ onComplete }: Props) {
     }
 
     onComplete({
-      id: `local-${Date.now()}`,
+      id: getCurrentFirebaseUserId() ?? `local-${Date.now()}`,
       nickname: nickname.trim(),
       dateOfBirth,
       gender,
@@ -170,7 +178,7 @@ export function RegistrationScreen({ onComplete }: Props) {
   }
 
   if (!showRegistration) {
-    return <WelcomeStartScreen onGetStarted={handleAuthRegistered} />;
+    return <WelcomeStartScreen onGetStarted={handleAuthRegistered} onLogin={onComplete} />;
   }
 
   return (
@@ -334,14 +342,20 @@ export function RegistrationScreen({ onComplete }: Props) {
 }
 
 function WelcomeStartScreen({
-  onGetStarted
+  onGetStarted,
+  onLogin
 }: {
   onGetStarted: (result: AuthRegistrationResult) => void;
+  onLogin: (profile: UserProfile) => void;
 }) {
   const [showRegisterOptions, setShowRegisterOptions] = useState(false);
+  const [showLoginForm, setShowLoginForm] = useState(false);
   const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
   const [authName, setAuthName] = useState('');
   const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [verificationSent, setVerificationSent] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
@@ -351,9 +365,14 @@ function WelcomeStartScreen({
   const cardOpacity = useRef(new Animated.Value(1)).current;
   const cardTranslate = useRef(new Animated.Value(0)).current;
   const heroPhotos = [candidates[1], candidates[2], candidates[0], candidates[3]];
-  const canSendSocial = authName.trim().length >= 2 && authEmail.includes('@') && !authBusy && !verificationSent;
+  const canSendSocial =
+    authName.trim().length >= 2 &&
+    authEmail.includes('@') &&
+    authPassword.trim().length >= 6 &&
+    !authBusy;
   const canConfirmSocial = verificationSent && !authBusy;
   const canSendPhone = phoneNumber.trim().length >= 8 && !authBusy;
+  const canLogin = loginEmail.includes('@') && loginPassword.length >= 6 && !authBusy;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -410,9 +429,37 @@ function WelcomeStartScreen({
     setAuthBusy(false);
   }
 
+  function resetAuthFields() {
+    setAuthMethod(null);
+    setAuthName('');
+    setAuthEmail('');
+    setAuthPassword('');
+    setLoginEmail('');
+    setLoginPassword('');
+    setPhoneNumber('');
+    resetVerificationState();
+  }
+
+  function openLoginForm() {
+    transitionCard(() => {
+      resetAuthFields();
+      setShowRegisterOptions(false);
+      setShowLoginForm(true);
+    });
+  }
+
+  function openRegisterOptions() {
+    transitionCard(() => {
+      resetAuthFields();
+      setShowRegisterOptions(true);
+      setShowLoginForm(false);
+    });
+  }
+
   function selectMethod(method: AuthMethod) {
     transitionCard(() => {
       setAuthMethod(method);
+      setShowLoginForm(false);
       resetVerificationState();
     });
   }
@@ -432,6 +479,28 @@ function WelcomeStartScreen({
     });
   }
 
+  function createLoginStarterProfile(result: { displayName?: string; contact?: string }): UserProfile {
+    const contact = result.contact ?? loginEmail.trim();
+    const emailName = contact.includes('@') ? contact.split('@')[0] : '';
+    const nickname = result.displayName?.trim() || emailName || 'KaTalk member';
+
+    return {
+      id: getCurrentFirebaseUserId() ?? `local-${Date.now()}`,
+      nickname,
+      dateOfBirth: '2000-01-01',
+      gender: 'Prefer not to say',
+      preference: 'Everyone',
+      ageRange: '21-35',
+      interests: ['Coffee', 'Music', 'Deep talks'],
+      comfort: 'balanced',
+      authMethod: 'google',
+      authContact: contact,
+      acceptedTerms: true,
+      acceptedPrivacy: true,
+      acceptedRules: true
+    };
+  }
+
   async function handleSendVerification() {
     if (authMethod === 'phone') {
       setVerificationStatus('Phone verification needs Firebase Phone Auth setup before real SMS codes can be sent.');
@@ -441,9 +510,57 @@ function WelcomeStartScreen({
     setAuthBusy(true);
     setVerificationStatus(null);
 
-    const result = await startEmailVerification(authEmail.trim(), authName.trim());
+    const result = verificationSent
+      ? await resendEmailVerification()
+      : await startEmailVerification(authEmail.trim(), authName.trim(), authPassword.trim());
 
     setVerificationSent(result.ok);
+    setVerificationStatus(result.message);
+    setAuthBusy(false);
+  }
+
+  async function handleLogin() {
+    setAuthBusy(true);
+    setVerificationStatus('Signing in...');
+
+    try {
+      const result = await signInWithEmail(loginEmail.trim(), loginPassword);
+
+      setVerificationStatus(result.message);
+
+      if (!result.ok) {
+        return;
+      }
+
+      setVerificationStatus('Signed in. Loading your profile...');
+
+      try {
+        const storedProfile = await loadCurrentFirebaseUserProfile(5000);
+
+        if (storedProfile) {
+          onLogin(storedProfile);
+          return;
+        }
+      } catch {
+        setVerificationStatus('Signed in. Opening KaTalk...');
+      }
+
+      onLogin(createLoginStarterProfile(result));
+    } catch {
+      setVerificationStatus('Sign in took too long. Check your connection, then try again.');
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function handlePasswordReset() {
+    if (!loginEmail.includes('@')) {
+      setVerificationStatus('Enter your Gmail first, then tap reset password.');
+      return;
+    }
+
+    setAuthBusy(true);
+    const result = await sendEmailPasswordReset(loginEmail.trim());
     setVerificationStatus(result.message);
     setAuthBusy(false);
   }
@@ -490,6 +607,8 @@ function WelcomeStartScreen({
             ? authMethod === 'phone'
               ? 'Register With Phone'
               : `Register With ${authMethod === 'apple' ? 'Apple' : 'Google'}`
+            : showLoginForm
+            ? 'Log In To KaTalk'
             : showRegisterOptions
             ? 'Register To Start Meeting People'
             : 'Start To Find Your Ideal Relationship'}
@@ -498,7 +617,9 @@ function WelcomeStartScreen({
           {authMethod
             ? authMethod === 'phone'
               ? 'Real SMS verification needs Firebase Phone Auth setup before this method can go live.'
-              : 'Enter your email, open Gmail or your inbox, then confirm Firebase email verification.'
+              : 'Create a password, verify your Gmail, then use this same login next time.'
+            : showLoginForm
+            ? 'Use the Gmail and password you registered with. Verified users enter immediately.'
             : showRegisterOptions
             ? 'Choose a registration method to create your calm, anonymous-first profile.'
             : 'Create a unique emotional story that describes you better than words.'}
@@ -508,6 +629,7 @@ function WelcomeStartScreen({
             method={authMethod}
             name={authName}
             email={authEmail}
+            password={authPassword}
             phoneNumber={phoneNumber}
             verificationSent={verificationSent}
             verificationStatus={verificationStatus}
@@ -519,6 +641,10 @@ function WelcomeStartScreen({
               setAuthEmail(value);
               resetVerificationState();
             }}
+            onPasswordChange={(value) => {
+              setAuthPassword(value);
+              resetVerificationState();
+            }}
             onPhoneChange={(value) => {
               setPhoneNumber(value);
               resetVerificationState();
@@ -526,6 +652,25 @@ function WelcomeStartScreen({
             onSendCode={handleSendVerification}
             onBack={resetToMethods}
             onContinue={handleConfirmVerification}
+          />
+        ) : showLoginForm ? (
+          <LoginForm
+            email={loginEmail}
+            password={loginPassword}
+            status={verificationStatus}
+            isBusy={authBusy}
+            canLogin={canLogin}
+            onEmailChange={(value) => {
+              setLoginEmail(value);
+              setVerificationStatus(null);
+            }}
+            onPasswordChange={(value) => {
+              setLoginPassword(value);
+              setVerificationStatus(null);
+            }}
+            onLogin={handleLogin}
+            onPasswordReset={handlePasswordReset}
+            onBack={() => transitionCard(() => setShowLoginForm(false))}
           />
         ) : showRegisterOptions ? (
           <>
@@ -547,16 +692,26 @@ function WelcomeStartScreen({
               onPress={() => selectMethod('phone')}
               variant="phone"
             />
+            <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.loginPrompt}>
+              <AppText style={styles.loginPromptText}>Already have an account?</AppText>
+              <AppText style={styles.loginPromptAction}>Log in</AppText>
+            </PressableScale>
           </>
         ) : (
-          <PressableScale
-            accessibilityRole="button"
-            onPress={() => transitionCard(() => setShowRegisterOptions(true))}
-            style={styles.getStartedButton}
-          >
-            <AppText style={styles.getStartedText}>Get Started</AppText>
-            <Ionicons name="chevron-forward" size={18} color={colors.ink} />
-          </PressableScale>
+          <>
+            <PressableScale
+              accessibilityRole="button"
+              onPress={openRegisterOptions}
+              style={styles.getStartedButton}
+            >
+              <AppText style={styles.getStartedText}>Get Started</AppText>
+              <Ionicons name="chevron-forward" size={18} color={colors.ink} />
+            </PressableScale>
+            <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.loginPrompt}>
+              <AppText style={styles.loginPromptText}>Already registered?</AppText>
+              <AppText style={styles.loginPromptAction}>Log in</AppText>
+            </PressableScale>
+          </>
         )}
       </Animated.View>
     </View>
@@ -567,6 +722,7 @@ function AuthMethodForm({
   method,
   name,
   email,
+  password,
   phoneNumber,
   verificationSent,
   verificationStatus,
@@ -575,6 +731,7 @@ function AuthMethodForm({
   canContinue,
   onNameChange,
   onEmailChange,
+  onPasswordChange,
   onPhoneChange,
   onSendCode,
   onBack,
@@ -583,6 +740,7 @@ function AuthMethodForm({
   method: AuthMethod;
   name: string;
   email: string;
+  password: string;
   phoneNumber: string;
   verificationSent: boolean;
   verificationStatus: string | null;
@@ -591,6 +749,7 @@ function AuthMethodForm({
   canContinue: boolean;
   onNameChange: (value: string) => void;
   onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
   onSendCode: () => void;
   onBack: () => void;
@@ -654,6 +813,14 @@ function AuthMethodForm({
         placeholderTextColor={colors.muted}
         style={styles.authInput}
       />
+      <TextInput
+        value={password}
+        onChangeText={onPasswordChange}
+        secureTextEntry
+        placeholder="Password, minimum 6 characters"
+        placeholderTextColor={colors.muted}
+        style={styles.authInput}
+      />
       <PressableScale
         accessibilityRole="button"
         onPress={onSendCode}
@@ -661,7 +828,7 @@ function AuthMethodForm({
         style={[styles.sendCodeButton, !canSend && styles.disabledAuthButton]}
       >
         <AppText style={styles.sendCodeText}>
-          {isBusy ? 'Working...' : verificationSent ? 'Verification Sent' : 'Send Verification Email'}
+          {isBusy ? 'Working...' : verificationSent ? 'Resend Verification Email' : 'Send Verification Email'}
         </AppText>
       </PressableScale>
       {verificationStatus ? (
@@ -679,6 +846,79 @@ function AuthMethodForm({
           style={[styles.continueAuthButton, !canContinue && styles.disabledAuthButton]}
         >
           <AppText style={styles.continueAuthText}>Confirm Verification</AppText>
+        </PressableScale>
+      </View>
+    </View>
+  );
+}
+
+function LoginForm({
+  email,
+  password,
+  status,
+  isBusy,
+  canLogin,
+  onEmailChange,
+  onPasswordChange,
+  onLogin,
+  onPasswordReset,
+  onBack
+}: {
+  email: string;
+  password: string;
+  status: string | null;
+  isBusy: boolean;
+  canLogin: boolean;
+  onEmailChange: (value: string) => void;
+  onPasswordChange: (value: string) => void;
+  onLogin: () => void;
+  onPasswordReset: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <View style={styles.authForm}>
+      <TextInput
+        value={email}
+        onChangeText={onEmailChange}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        placeholder="Gmail or email"
+        placeholderTextColor={colors.muted}
+        style={styles.authInput}
+      />
+      <TextInput
+        value={password}
+        onChangeText={onPasswordChange}
+        secureTextEntry
+        placeholder="Password"
+        placeholderTextColor={colors.muted}
+        style={styles.authInput}
+      />
+      {status ? <AppText style={styles.verificationHint}>{status}</AppText> : null}
+      <PressableScale
+        accessibilityRole="button"
+        onPress={onLogin}
+        disabled={!canLogin}
+        style={[styles.loginSubmitButton, !canLogin && styles.disabledAuthButton]}
+      >
+        {isBusy ? <ActivityIndicator size="small" color={colors.ink} /> : null}
+        <AppText style={styles.continueAuthText}>{isBusy ? 'Signing in...' : 'Log In'}</AppText>
+      </PressableScale>
+      <View style={styles.authFormActions}>
+        <PressableScale accessibilityRole="button" onPress={onBack} style={styles.backAuthButton}>
+          <Ionicons name="chevron-back" size={17} color={colors.ink} />
+          <AppText style={styles.backAuthText}>Back</AppText>
+        </PressableScale>
+        <PressableScale
+          accessibilityRole="button"
+          onPress={onPasswordReset}
+          disabled={!email.includes('@') || isBusy}
+          style={[
+            styles.passwordResetButton,
+            (!email.includes('@') || isBusy) && styles.disabledAuthButton
+          ]}
+        >
+          <AppText style={styles.passwordResetText}>Reset Password</AppText>
         </PressableScale>
       </View>
     </View>
@@ -987,6 +1227,23 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: 13
   },
+  loginPrompt: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6
+  },
+  loginPromptText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  loginPromptAction: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
   authForm: {
     width: '100%',
     gap: 10
@@ -1043,6 +1300,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#FBE878'
   },
   continueAuthText: {
+    fontWeight: '900'
+  },
+  loginSubmitButton: {
+    minHeight: 48,
+    borderRadius: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FBE878'
+  },
+  passwordResetButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  passwordResetText: {
+    color: colors.ink,
     fontWeight: '900'
   },
   disabledAuthButton: {

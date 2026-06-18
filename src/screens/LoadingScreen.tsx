@@ -4,19 +4,40 @@ import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { colors } from '../theme';
 
-export function LoadingScreen() {
+type LoadingStepConfig = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+};
+
+type Props = {
+  title?: string;
+  subtitle?: string;
+  steps?: LoadingStepConfig[];
+};
+
+const defaultSteps: LoadingStepConfig[] = [
+  { icon: 'shield-checkmark-outline', label: 'Safety ready' },
+  { icon: 'eye-off-outline', label: 'Anonymous first' },
+  { icon: 'timer-outline', label: '2-minute match ready' }
+];
+
+export function LoadingScreen({
+  title = 'Preparing KaTalk',
+  subtitle = 'Setting up your anonymous profile and safety controls.',
+  steps = defaultSteps
+}: Props) {
   return (
     <View style={styles.root}>
       <View style={styles.mark}>
         <Ionicons name="chatbubbles-outline" size={40} color={colors.accent} />
       </View>
-      <AppText style={styles.title}>Preparing KaTalk</AppText>
-      <AppText style={styles.subtitle}>Setting up your anonymous profile and safety controls.</AppText>
+      <AppText style={styles.title}>{title}</AppText>
+      <AppText style={styles.subtitle}>{subtitle}</AppText>
       <ActivityIndicator size="large" color={colors.accent} style={styles.spinner} />
       <View style={styles.steps}>
-        <LoadingStep icon="shield-checkmark-outline" label="Safety ready" />
-        <LoadingStep icon="eye-off-outline" label="Anonymous first" />
-        <LoadingStep icon="timer-outline" label="2-minute match ready" />
+        {steps.map((step) => (
+          <LoadingStep key={step.label} icon={step.icon} label={step.label} />
+        ))}
       </View>
     </View>
   );

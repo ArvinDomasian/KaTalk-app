@@ -1,9 +1,12 @@
-import { initializeApp, getApps } from 'firebase/app';
+import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import {
   createUserWithEmailAndPassword,
   getAuth,
   reload,
   sendEmailVerification,
+  sendPasswordResetEmail,
+  signOut,
+  signInWithEmailAndPassword,
   updateProfile,
   type User
 } from 'firebase/auth';
@@ -15,17 +18,33 @@ declare const process: {
 type VerificationResult = {
   ok: boolean;
   message: string;
+  displayName?: string;
+  contact?: string;
 };
 
 let pendingVerificationUser: User | null = null;
+const FIREBASE_TIMEOUT_ERROR = 'KATALK_FIREBASE_TIMEOUT';
+
+function withFirebaseTimeout<T>(promise: Promise<T>, timeoutMs = 10000) {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(FIREBASE_TIMEOUT_ERROR)), timeoutMs);
+    })
+  ]);
+}
+
+function cleanEnvValue(value?: string) {
+  return value?.trim().replace(/,$/, '').replace(/^["']|["']$/g, '');
+}
 
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY?.trim(),
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim(),
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID?.trim(),
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim(),
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim(),
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID?.trim()
+  apiKey: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_API_KEY),
+  authDomain: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN),
+  projectId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID),
+  storageBucket: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET),
+  messagingSenderId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID),
+  appId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_APP_ID)
 };
 
 const requiredFirebaseKeys = [
@@ -43,38 +62,100 @@ export function isFirebaseEmailVerificationConfigured() {
   return getMissingFirebaseKeys().length === 0;
 }
 
-function getFirebaseAuth() {
+export function getConfiguredFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseEmailVerificationConfigured()) {
     return null;
   }
 
-  const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
+  return getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
+}
+
+function getFirebaseAuth() {
+  const app = getConfiguredFirebaseApp();
+
+  if (!app) {
+    return null;
+  }
+
   return getAuth(app);
 }
 
-function createTemporaryPassword() {
-  return `KaTalk-${Date.now()}-${Math.random().toString(36).slice(2)}!`;
+export function getCurrentFirebaseUserId() {
+  return getFirebaseAuth()?.currentUser?.uid ?? null;
+}
+
+export async function signOutCurrentUser() {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    return;
+  }
+
+  pendingVerificationUser = null;
+  await signOut(auth);
 }
 
 function getFirebaseErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message === FIREBASE_TIMEOUT_ERROR) {
+    return 'Firebase is taking too long to respond. Check your connection, then try again.';
+  }
+
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
 
   if (code === 'auth/email-already-in-use') {
-    return 'This email is already registered. Sign-in support will be connected next.';
+    return 'This email is already registered. Use Log in at the bottom of the page.';
   }
 
   if (code === 'auth/invalid-email') {
     return 'Please enter a valid email address.';
   }
 
+  if (code === 'auth/weak-password') {
+    return 'Password must be at least 6 characters.';
+  }
+
+  if (code === 'auth/missing-password') {
+    return 'Please enter your password.';
+  }
+
+  if (
+    code === 'auth/invalid-credential' ||
+    code === 'auth/user-not-found' ||
+    code === 'auth/wrong-password'
+  ) {
+    return 'Email or password is incorrect.';
+  }
+
   if (code === 'auth/network-request-failed') {
     return 'Network connection failed. Please try again when you are online.';
   }
 
-  return 'Verification could not start. Please check Firebase setup and try again.';
+  if (code === 'auth/too-many-requests') {
+    return 'Firebase is temporarily blocking more emails to this address. Wait a few minutes, then try again.';
+  }
+
+  if (code === 'auth/operation-not-allowed') {
+    return 'Email registration is not enabled in Firebase yet. Turn on Authentication > Sign-in method > Email/Password.';
+  }
+
+  if (code === 'auth/invalid-api-key' || code.includes('api-key')) {
+    return 'Firebase rejected the API key. Check that .env uses the Web app config values with no quotes or commas.';
+  }
+
+  if (code === 'auth/app-deleted' || code === 'auth/invalid-app-credential') {
+    return 'Firebase rejected this app config. Re-copy the Web app firebaseConfig values into .env.';
+  }
+
+  return code
+    ? `Firebase returned ${code}.`
+    : 'Verification could not start. Please check Firebase setup and try again.';
 }
 
-export async function startEmailVerification(email: string, displayName?: string): Promise<VerificationResult> {
+export async function startEmailVerification(
+  email: string,
+  displayName: string | undefined,
+  password: string
+): Promise<VerificationResult> {
   const auth = getFirebaseAuth();
 
   if (!auth) {
@@ -89,19 +170,133 @@ export async function startEmailVerification(email: string, displayName?: string
     };
   }
 
+  if (password.length < 6) {
+    return {
+      ok: false,
+      message: 'Password must be at least 6 characters.'
+    };
+  }
+
   try {
-    const credential = await createUserWithEmailAndPassword(auth, email, createTemporaryPassword());
+    const credential = await withFirebaseTimeout(createUserWithEmailAndPassword(auth, email, password));
 
     if (displayName?.trim()) {
-      await updateProfile(credential.user, { displayName: displayName.trim() });
+      await withFirebaseTimeout(updateProfile(credential.user, { displayName: displayName.trim() }), 7000);
     }
 
-    await sendEmailVerification(credential.user);
+    await withFirebaseTimeout(sendEmailVerification(credential.user), 10000);
     pendingVerificationUser = credential.user;
 
     return {
       ok: true,
-      message: 'Verification email sent. Open Gmail, verify the email, then tap Confirm Verification.'
+      message:
+        'Verification email sent. Check Gmail inbox, spam, and Promotions, then tap Confirm Verification after opening the link.'
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: getFirebaseErrorMessage(error)
+    };
+  }
+}
+
+export async function signInWithEmail(email: string, password: string): Promise<VerificationResult> {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    return {
+      ok: false,
+      message: 'KaTalk cannot reach Firebase yet. Check your Firebase values, then fully restart Expo.'
+    };
+  }
+
+  try {
+    const credential = await withFirebaseTimeout(signInWithEmailAndPassword(auth, email, password), 10000);
+    await withFirebaseTimeout(reload(credential.user), 6000);
+
+    if (!credential.user.emailVerified) {
+      pendingVerificationUser = credential.user;
+      await withFirebaseTimeout(sendEmailVerification(credential.user), 10000);
+
+      return {
+        ok: false,
+        message: 'Email is not verified yet. I sent another verification email to your Gmail.'
+      };
+    }
+
+    return {
+      ok: true,
+      message: 'Signed in.',
+      displayName: credential.user.displayName ?? undefined,
+      contact: credential.user.email ?? email
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: getFirebaseErrorMessage(error)
+    };
+  }
+}
+
+export async function sendEmailPasswordReset(email: string): Promise<VerificationResult> {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    return {
+      ok: false,
+      message: 'KaTalk cannot reach Firebase yet. Check your Firebase values, then fully restart Expo.'
+    };
+  }
+
+  try {
+    await withFirebaseTimeout(sendPasswordResetEmail(auth, email), 10000);
+
+    return {
+      ok: true,
+      message: 'Password reset email sent. Check Gmail inbox, spam, and Promotions.'
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: getFirebaseErrorMessage(error)
+    };
+  }
+}
+
+export async function resendEmailVerification(): Promise<VerificationResult> {
+  const auth = getFirebaseAuth();
+  const user = pendingVerificationUser ?? auth?.currentUser ?? null;
+
+  if (!auth) {
+    return {
+      ok: false,
+      message: 'KaTalk cannot reach Firebase yet. Check your Firebase values, then fully restart Expo.'
+    };
+  }
+
+  if (!user) {
+    return {
+      ok: false,
+      message: 'This app session has no pending verification. Enter the email again, then send verification.'
+    };
+  }
+
+  try {
+    await withFirebaseTimeout(reload(user), 6000);
+
+    if (user.emailVerified) {
+      return {
+        ok: true,
+        message: 'Email is already verified. Tap Confirm Verification to continue.'
+      };
+    }
+
+    await withFirebaseTimeout(sendEmailVerification(user), 10000);
+    pendingVerificationUser = user;
+
+    return {
+      ok: true,
+      message: 'Verification email resent. Check Gmail inbox, spam, and Promotions.'
     };
   } catch (error) {
     return {
@@ -120,7 +315,7 @@ export async function confirmEmailVerification(): Promise<VerificationResult> {
   }
 
   try {
-    await reload(pendingVerificationUser);
+    await withFirebaseTimeout(reload(pendingVerificationUser), 6000);
 
     if (!pendingVerificationUser.emailVerified) {
       return {
