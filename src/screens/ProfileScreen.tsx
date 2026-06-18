@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Image, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Alert, Animated, Image, Modal, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -53,6 +53,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [isPosting, setIsPosting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [postComposerVisible, setPostComposerVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsPanel, setSettingsPanel] = useState<'main' | 'edit' | 'avatar' | 'notifications'>('main');
   const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
@@ -99,6 +100,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
       setPostText('');
       setPhotoUrl('');
       setStatus('Posted publicly on your profile.');
+      setPostComposerVisible(false);
     } catch (error) {
       setStatus(profilePostErrorMessage(error));
     } finally {
@@ -212,6 +214,20 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     }));
   }
 
+  function openPostComposer() {
+    setStatus(null);
+    setPostComposerVisible(true);
+  }
+
+  function closePostComposer() {
+    if (isPosting) {
+      return;
+    }
+
+    setPostComposerVisible(false);
+    setStatus(null);
+  }
+
   return (
     <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -256,40 +272,6 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
           </AppText>
         </View>
 
-        <View style={styles.composer}>
-          <View style={styles.composerHeader}>
-            <AppText style={styles.sectionTitle}>Create post</AppText>
-            <Ionicons name="image-outline" size={20} color={colors.muted} />
-          </View>
-          <TextInput
-            value={postText}
-            onChangeText={setPostText}
-            placeholder="Share anything you want people to know about you"
-            placeholderTextColor={colors.muted}
-            multiline
-            style={styles.postInput}
-          />
-          <TextInput
-            value={photoUrl}
-            onChangeText={setPhotoUrl}
-            placeholder="Photo URL, or upload from web below"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            style={styles.photoInput}
-          />
-          <WebPhotoPicker disabled={isPosting} onPhotoSelected={handleWebPhoto} />
-          {photoUrl ? (
-            <Image source={{ uri: photoUrl }} style={styles.previewImage} />
-          ) : null}
-          {status ? <AppText style={styles.statusText}>{status}</AppText> : null}
-          <PrimaryButton
-            label={isPosting ? 'Posting...' : 'Post'}
-            icon="add-circle-outline"
-            disabled={isPosting || (!postText.trim() && !photoUrl.trim())}
-            onPress={publishPost}
-          />
-        </View>
-
         <View style={styles.feedHeader}>
           <AppText style={styles.sectionTitle}>Public posts</AppText>
           <AppText style={styles.feedCount}>{posts.length}</AppText>
@@ -304,6 +286,23 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
           </View>
         )}
       </ScrollView>
+      {!settingsVisible ? (
+        <PressableScale accessibilityRole="button" onPress={openPostComposer} style={styles.createPostFab}>
+          <CreatePostIcon />
+        </PressableScale>
+      ) : null}
+      <PostComposerModal
+        visible={postComposerVisible}
+        postText={postText}
+        photoUrl={photoUrl}
+        status={status}
+        isPosting={isPosting}
+        onTextChange={setPostText}
+        onPhotoUrlChange={setPhotoUrl}
+        onPhotoSelected={handleWebPhoto}
+        onClose={closePostComposer}
+        onPublish={publishPost}
+      />
       {settingsVisible ? (
         <View style={styles.settingsOverlay} pointerEvents="box-none">
           <PressableScale
@@ -398,6 +397,99 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
         </View>
       ) : null}
     </View>
+  );
+}
+
+function CreatePostIcon() {
+  return (
+    <View style={styles.createPostIcon}>
+      <Ionicons name="add" size={34} color={colors.onAccent} style={styles.createPostPlus} />
+      <Ionicons name="leaf" size={38} color={colors.onAccent} style={styles.createPostQuill} />
+    </View>
+  );
+}
+
+function PostComposerModal({
+  visible,
+  postText,
+  photoUrl,
+  status,
+  isPosting,
+  onTextChange,
+  onPhotoUrlChange,
+  onPhotoSelected,
+  onClose,
+  onPublish
+}: {
+  visible: boolean;
+  postText: string;
+  photoUrl: string;
+  status: string | null;
+  isPosting: boolean;
+  onTextChange: (value: string) => void;
+  onPhotoUrlChange: (value: string) => void;
+  onPhotoSelected: (file: Blob) => void;
+  onClose: () => void;
+  onPublish: () => void;
+}) {
+  const canPublish = Boolean(postText.trim() || photoUrl.trim()) && !isPosting;
+
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.postComposerOverlay}>
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.postComposerBackdrop} />
+        <View style={styles.postComposerSheet}>
+          <View style={styles.postComposerHeader}>
+            <CreatePostIcon />
+            <View style={styles.postComposerTitleBlock}>
+              <AppText style={styles.postComposerTitle}>Create post</AppText>
+              <AppText style={styles.postComposerMeta}>Post a picture or update onto your wall.</AppText>
+            </View>
+            <PressableScale accessibilityRole="button" onPress={onClose} style={styles.postComposerClose}>
+              <Ionicons name="close-outline" size={20} color={colors.ink} />
+            </PressableScale>
+          </View>
+
+          <TextInput
+            value={postText}
+            onChangeText={onTextChange}
+            placeholder="Share anything you want people to know about you"
+            placeholderTextColor={colors.muted}
+            multiline
+            style={styles.postInput}
+          />
+          <TextInput
+            value={photoUrl}
+            onChangeText={onPhotoUrlChange}
+            placeholder="Photo URL, or upload from web below"
+            placeholderTextColor={colors.muted}
+            autoCapitalize="none"
+            style={styles.photoInput}
+          />
+          <WebPhotoPicker disabled={isPosting} onPhotoSelected={onPhotoSelected} />
+          {photoUrl.trim() ? <Image source={{ uri: photoUrl.trim() }} style={styles.previewImage} /> : null}
+          {status ? <AppText style={styles.statusText}>{status}</AppText> : null}
+
+          <View style={styles.postComposerActions}>
+            <PressableScale
+              accessibilityRole="button"
+              onPress={onClose}
+              disabled={isPosting}
+              style={styles.cancelPostButton}
+            >
+              <AppText style={styles.cancelPostText}>Cancel</AppText>
+            </PressableScale>
+            <PrimaryButton
+              label={isPosting ? 'Posting...' : 'Post'}
+              icon="add-circle-outline"
+              disabled={!canPublish}
+              onPress={onPublish}
+              style={styles.publishPostButton}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -816,7 +908,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 30,
+    paddingBottom: 112,
     gap: 14
   },
   topBar: {
@@ -1222,6 +1314,99 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     textAlign: 'center'
+  },
+  createPostFab: {
+    position: 'absolute',
+    right: 18,
+    bottom: 18,
+    zIndex: 8
+  },
+  createPostIcon: {
+    width: 66,
+    height: 66,
+    borderRadius: 33,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2',
+    shadowColor: '#8B6AF2',
+    shadowOpacity: 0.38,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 5
+  },
+  createPostPlus: {
+    position: 'absolute',
+    left: 13,
+    top: 14
+  },
+  createPostQuill: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    transform: [{ rotate: '-32deg' }]
+  },
+  postComposerOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end'
+  },
+  postComposerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(16, 17, 20, 0.42)'
+  },
+  postComposerSheet: {
+    gap: 10,
+    padding: 16,
+    paddingBottom: 22,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderColor: colors.line
+  },
+  postComposerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  postComposerTitleBlock: {
+    flex: 1
+  },
+  postComposerTitle: {
+    fontSize: 18,
+    fontWeight: '900'
+  },
+  postComposerMeta: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  postComposerClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  postComposerActions: {
+    flexDirection: 'row',
+    gap: 10
+  },
+  cancelPostButton: {
+    flex: 0.8,
+    minHeight: 48,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  cancelPostText: {
+    fontWeight: '900'
+  },
+  publishPostButton: {
+    flex: 1.2
   },
   feedHeader: {
     flexDirection: 'row',
