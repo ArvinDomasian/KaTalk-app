@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -32,6 +34,7 @@ import { formatTimer } from '../utils/age';
 
 const MATCH_SECONDS = 120;
 const RETURN_TO_MATCHING_DELAY_MS = 1600;
+const NO_MATCH_TIMEOUT_MS = 15000;
 
 type Props = {
   profile: UserProfile;
@@ -51,13 +54,18 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
   const [matchEndsAtMs, setMatchEndsAtMs] = useState<number | null>(null);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [homeNotice, setHomeNotice] = useState<string | null>(null);
+  const [matchWindowVisible, setMatchWindowVisible] = useState(false);
+  const [matchWindowStage, setMatchWindowStage] = useState<'finding' | 'found' | 'none'>('finding');
+  const [matchWindowCandidate, setMatchWindowCandidate] = useState<Candidate | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const matchCompleteRef = useRef(false);
   const returnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const matchWindowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isEndingRef = useRef(false);
   const liveQueueUnsubscribeRef = useRef<null | (() => void)>(null);
   const liveMessagesUnsubscribeRef = useRef<null | (() => void)>(null);
   const liveStateUnsubscribeRef = useRef<null | (() => void)>(null);
+  const timerWiggle = useRef(new Animated.Value(0)).current;
 
   const matchComplete = savedByMe && savedByMatch;
 
@@ -77,6 +85,7 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     return () => {
       clearLiveSubscriptions();
       clearReturnTimer();
+      clearMatchWindowTimer();
       onChattingStateChange?.(false);
     };
   }, [onChattingStateChange]);
@@ -107,8 +116,25 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     scrollRef.current?.scrollToEnd({ animated: true });
   }, [messages.length]);
 
+  useEffect(() => {
+    if (status !== 'active' || secondsLeft > 59 || secondsLeft <= 0) {
+      timerWiggle.setValue(0);
+      return;
+    }
+
+    timerWiggle.stopAnimation(() => {
+      timerWiggle.setValue(0);
+      Animated.sequence([
+        Animated.timing(timerWiggle, { toValue: 1, duration: 70, useNativeDriver: true }),
+        Animated.timing(timerWiggle, { toValue: -1, duration: 70, useNativeDriver: true }),
+        Animated.timing(timerWiggle, { toValue: 1, duration: 70, useNativeDriver: true }),
+        Animated.timing(timerWiggle, { toValue: 0, duration: 70, useNativeDriver: true })
+      ]).start();
+    });
+  }, [secondsLeft, status, timerWiggle]);
+
   const timerTone = useMemo(() => {
-    if (secondsLeft <= 20) {
+    if (secondsLeft <= 59) {
       return colors.danger;
     }
 
@@ -118,6 +144,10 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
 
     return colors.accent;
   }, [secondsLeft]);
+  const timerWiggleRotation = timerWiggle.interpolate({
+    inputRange: [-1, 0, 1],
+    outputRange: ['-2deg', '0deg', '2deg']
+  });
 
   function clearLiveSubscriptions() {
     liveQueueUnsubscribeRef.current?.();
@@ -135,11 +165,47 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     }
   }
 
+  function clearMatchWindowTimer() {
+    if (matchWindowTimerRef.current) {
+      clearTimeout(matchWindowTimerRef.current);
+      matchWindowTimerRef.current = null;
+    }
+  }
+
   function scheduleReturnToMatching(notice: string) {
     clearReturnTimer();
     returnTimerRef.current = setTimeout(() => {
       resetToIdle(notice);
     }, RETURN_TO_MATCHING_DELAY_MS);
+  }
+
+  function showFoundMatch(session: MessageMatchSession, isLive: boolean) {
+    clearMatchWindowTimer();
+    setMatchWindowCandidate(session.candidate);
+    setMatchWindowStage('found');
+    setSearchMessage('You find a match');
+
+    matchWindowTimerRef.current = setTimeout(() => {
+      setMatchWindowVisible(false);
+      setMatchWindowCandidate(null);
+      startMatchedSession(session, isLive);
+    }, 1100);
+  }
+
+  function showNoMatchFound() {
+    clearLiveSubscriptions();
+    setSearchMessage('No match found try again');
+    setHomeNotice('No match found try again');
+    setMessages([]);
+    setMatchWindowCandidate(null);
+    setMatchWindowStage('none');
+
+    clearMatchWindowTimer();
+    matchWindowTimerRef.current = setTimeout(() => {
+      setMatchWindowVisible(false);
+      setStatus('idle');
+      setSearchMessage(null);
+    }, 1200);
   }
 
   function startMatchedSession(session: MessageMatchSession, isLive: boolean) {
@@ -162,6 +228,8 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     setMatchEndsAtMs(endsAtMs);
     setSecondsLeft(Math.max(0, Math.ceil((endsAtMs - Date.now()) / 1000)));
     setSearchMessage(null);
+    setMatchWindowVisible(false);
+    setMatchWindowCandidate(null);
     setHomeNotice(null);
     setStatus('active');
 
@@ -205,21 +273,28 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
   function findChat() {
     clearLiveSubscriptions();
     clearReturnTimer();
+    clearMatchWindowTimer();
     isEndingRef.current = false;
     setStatus('searching');
     setCandidate(null);
     setLiveMatchId(null);
     setMatchEndsAtMs(null);
-    setSearchMessage('Looking for a real KaTalk member...');
+    setSearchMessage('Finding someone');
+    setMatchWindowVisible(true);
+    setMatchWindowStage('finding');
+    setMatchWindowCandidate(null);
     setHomeNotice(null);
     setMessages([
       {
         id: 'searching-real',
         sender: 'system',
-        body: 'Looking for a real KaTalk member...',
+        body: 'Finding someone',
         sentAt: new Date()
       }
     ]);
+    matchWindowTimerRef.current = setTimeout(() => {
+      showNoMatchFound();
+    }, NO_MATCH_TIMEOUT_MS);
 
     liveQueueUnsubscribeRef.current = startLiveMessageMatching(profile, {
       onWaiting(message) {
@@ -235,9 +310,12 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
       },
       onMatched(session) {
         liveQueueUnsubscribeRef.current = null;
-        startMatchedSession(session, true);
+        showFoundMatch(session, true);
       },
       onError(message) {
+        clearMatchWindowTimer();
+        setMatchWindowVisible(false);
+        setMatchWindowCandidate(null);
         setStatus('idle');
         setSearchMessage(null);
         setHomeNotice(message);
@@ -377,6 +455,8 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
     setLiveMatchId(null);
     setMatchEndsAtMs(null);
     setSearchMessage(null);
+    setMatchWindowVisible(false);
+    setMatchWindowCandidate(null);
     setHomeNotice(notice ?? null);
   }
 
@@ -436,6 +516,11 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <MatchSearchWindow
+        visible={matchWindowVisible}
+        stage={matchWindowStage}
+        candidate={matchWindowCandidate}
+      />
       {status === 'idle' || status === 'searching' ? (
         <ScrollView contentContainerStyle={styles.chatHome}>
           <View style={styles.topBar}>
@@ -547,12 +632,20 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
                 {candidate.interests.join(' / ')}
               </AppText>
             </View>
-            <View style={[styles.timerPill, { borderColor: timerTone }]}>
+            <Animated.View
+              style={[
+                styles.timerPill,
+                {
+                  borderColor: timerTone,
+                  transform: [{ rotate: timerWiggleRotation }]
+                }
+              ]}
+            >
               <Ionicons name="timer-outline" size={17} color={timerTone} />
               <AppText style={[styles.timerText, { color: timerTone }]}>
                 {formatTimer(secondsLeft)}
               </AppText>
-            </View>
+            </Animated.View>
           </View>
 
           <ScrollView ref={scrollRef} contentContainerStyle={styles.messages}>
@@ -655,10 +748,111 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
   );
 }
 
+function MatchSearchWindow({
+  visible,
+  stage,
+  candidate
+}: {
+  visible: boolean;
+  stage: 'finding' | 'found' | 'none';
+  candidate: Candidate | null;
+}) {
+  const isFound = stage === 'found';
+  const isNone = stage === 'none';
+
+  return (
+    <Modal transparent visible={visible} animationType="fade">
+      <View style={styles.matchWindowOverlay}>
+        <View style={styles.matchWindowCard}>
+          <View
+            style={[
+              styles.matchWindowAvatar,
+              isFound && styles.matchWindowAvatarFound,
+              isNone && styles.matchWindowAvatarNone
+            ]}
+          >
+            {candidate?.photoUrl ? (
+              <Image source={{ uri: candidate.photoUrl }} style={styles.matchWindowImage} />
+            ) : (
+              <Ionicons
+                name={isNone ? 'search-outline' : 'person-circle-outline'}
+                size={64}
+                color={isFound ? colors.onAccent : colors.accent}
+              />
+            )}
+          </View>
+          <AppText style={styles.matchWindowTitle}>
+            {isNone ? 'No match found try again' : isFound ? 'You find a match' : 'Finding someone'}
+          </AppText>
+          <AppText style={styles.matchWindowCopy}>
+            {isNone
+              ? 'Nobody is available right now.'
+              : isFound
+                ? 'Opening your private inbox now.'
+                : 'Please wait while KaTalk looks for someone available.'}
+          </AppText>
+          {!isFound && !isNone ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.surface
+  },
+  matchWindowOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: 'rgba(16, 17, 20, 0.38)'
+  },
+  matchWindowCard: {
+    width: '100%',
+    maxWidth: 320,
+    minHeight: 260,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: colors.surface
+  },
+  matchWindowAvatar: {
+    width: 94,
+    height: 94,
+    borderRadius: 47,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: colors.accentSoft
+  },
+  matchWindowAvatarFound: {
+    backgroundColor: colors.accent
+  },
+  matchWindowAvatarNone: {
+    backgroundColor: colors.surfaceMuted
+  },
+  matchWindowImage: {
+    width: '100%',
+    height: '100%'
+  },
+  matchWindowTitle: {
+    marginTop: 4,
+    fontSize: 21,
+    lineHeight: 26,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  matchWindowCopy: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   chatHome: {
     paddingHorizontal: 16,

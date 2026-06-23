@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.katalk.app",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "KaTalk uses the camera only when you join a video match.",
         "NSMicrophoneUsageDescription": "KaTalk uses the microphone only when you join a voice room or video match.",
@@ -19,6 +20,7 @@
     },
     "android": {
       "package": "com.katalk.app",
+      "versionCode": 1,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -40,7 +42,8 @@
         {
           "locationWhenInUsePermission": "KaTalk uses your location to show nearby members by distance."
         }
-      ]
+      ],
+      "expo-audio"
     ]
   }
 }

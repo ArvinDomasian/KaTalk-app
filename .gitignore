@@ -6,3 +6,8 @@ web-build
 *.log
 firebase-debug.log
 firestore-debug.log
+*.jks
+*.keystore
+*.p8
+google-service-account.json
+store-credentials/

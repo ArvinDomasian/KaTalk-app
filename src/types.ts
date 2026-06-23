@@ -52,5 +52,10 @@ export type ProfilePost = {
   authorNickname: string;
   body: string;
   photoUrl?: string;
+  emoji?: string;
+  voiceUrl?: string;
+  musicUrl?: string;
+  musicTitle?: string;
+  visibility: 'public' | 'private';
   createdAt: Date;
 };

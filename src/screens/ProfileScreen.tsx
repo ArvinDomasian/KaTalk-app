@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Image, Modal, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Alert, Animated, Image, Linking, Modal, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -9,7 +9,8 @@ import {
   profilePostErrorMessage,
   subscribeProfilePosts,
   uploadProfileAvatar,
-  uploadProfilePostPhoto
+  uploadProfilePostPhoto,
+  uploadProfileVoiceClip
 } from '../services/profilePostService';
 import { colors } from '../theme';
 import type { ProfilePost, UserProfile } from '../types';
@@ -46,6 +47,7 @@ const interestSuggestions = [
   'Deep talks',
   'Quiet nights'
 ];
+const emojiOptions = ['😊', '😂', '😍', '🥰', '😎', '😭', '🔥', '✨', '❤️', '👍'];
 
 export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
   const [postText, setPostText] = useState('');
@@ -54,6 +56,14 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
   const [isPosting, setIsPosting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [postComposerVisible, setPostComposerVisible] = useState(false);
+  const [postVisibility, setPostVisibility] = useState<ProfilePost['visibility']>('public');
+  const [selectedEmoji, setSelectedEmoji] = useState('');
+  const [emojiPickerVisible, setEmojiPickerVisible] = useState(false);
+  const [voiceUrl, setVoiceUrl] = useState('');
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [musicComposerVisible, setMusicComposerVisible] = useState(false);
+  const [musicUrl, setMusicUrl] = useState('');
+  const [musicTitle, setMusicTitle] = useState('');
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsPanel, setSettingsPanel] = useState<'main' | 'edit' | 'avatar' | 'notifications'>('main');
   const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
@@ -75,6 +85,9 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     inputRange: [0, 1],
     outputRange: [320, 0]
   });
+  const voiceRecorderRef = useRef<any>(null);
+  const voiceStreamRef = useRef<any>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     return subscribeProfilePosts(
@@ -91,18 +104,45 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     setAvatarDraftUrl(profile.avatarUrl ?? '');
   }, [profile]);
 
+  useEffect(() => () => {
+    stopVoiceStream();
+  }, []);
+
   async function publishPost() {
     setIsPosting(true);
     setStatus(null);
 
     try {
-      await createProfilePost(profile, postText, photoUrl.trim() || undefined);
+      const createdPost = await createProfilePost(profile, postText, {
+        photoUrl: photoUrl.trim() || undefined,
+        emoji: selectedEmoji || undefined,
+        voiceUrl: voiceUrl || undefined,
+        musicUrl: musicUrl.trim() || undefined,
+        musicTitle: musicTitle.trim() || undefined,
+        visibility: postVisibility
+      });
+      setPosts((current) =>
+        current.some((post) => post.id === createdPost.id) ? current : [createdPost, ...current]
+      );
       setPostText('');
       setPhotoUrl('');
-      setStatus('Posted publicly on your profile.');
+      setSelectedEmoji('');
+      setVoiceUrl('');
+      setMusicUrl('');
+      setMusicTitle('');
+      setPostVisibility('public');
+      setEmojiPickerVisible(false);
+      setMusicComposerVisible(false);
+      setStatus(
+        createdPost.visibility === 'public'
+          ? 'Posted publicly on the wall.'
+          : 'Posted privately to your wall.'
+      );
       setPostComposerVisible(false);
     } catch (error) {
-      setStatus(profilePostErrorMessage(error));
+      const message = profilePostErrorMessage(error);
+      setStatus(message);
+      Alert.alert('Post not sent', message);
     } finally {
       setIsPosting(false);
     }
@@ -216,6 +256,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
 
   function openPostComposer() {
     setStatus(null);
+    setPostVisibility('public');
     setPostComposerVisible(true);
   }
 
@@ -226,6 +267,153 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
 
     setPostComposerVisible(false);
     setStatus(null);
+  }
+
+  function addTextToPost(text: string) {
+    setPostText((current) => {
+      if (!current.trim()) {
+        return text;
+      }
+
+      return `${current}${current.endsWith(' ') ? '' : ' '}${text}`;
+    });
+  }
+
+  function togglePostVisibility() {
+    setPostVisibility((current) => {
+      const next = current === 'public' ? 'private' : 'public';
+      setStatus(
+        next === 'public'
+          ? 'This post will be visible on the public wall.'
+          : 'This post will be private to your wall.'
+      );
+      return next;
+    });
+  }
+
+  function togglePostLocation() {
+    setStatus((current) =>
+      current === 'Location added to this post.' ? 'Location removed from this post.' : 'Location added to this post.'
+    );
+  }
+
+  function stopVoiceStream() {
+    const stream = voiceStreamRef.current;
+
+    stream?.getTracks?.().forEach((track: { stop?: () => void }) => track.stop?.());
+    voiceStreamRef.current = null;
+  }
+
+  async function toggleVoiceRecording() {
+    if (isRecordingVoice) {
+      voiceRecorderRef.current?.stop?.();
+      return;
+    }
+
+    if (Platform.OS !== 'web') {
+      setStatus('Voice messages on phone builds need the Expo audio package before recording can turn on.');
+      return;
+    }
+
+    const mediaDevices = (globalThis as any).navigator?.mediaDevices;
+    const MediaRecorderApi = (globalThis as any).MediaRecorder;
+
+    if (!mediaDevices?.getUserMedia || !MediaRecorderApi) {
+      setStatus('Voice recording is not available in this browser.');
+      return;
+    }
+
+    try {
+      const stream = await mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorderApi(stream);
+
+      voiceChunksRef.current = [];
+      voiceStreamRef.current = stream;
+      voiceRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event: { data?: Blob }) => {
+        if (event.data?.size) {
+          voiceChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        setIsRecordingVoice(false);
+        setIsPosting(true);
+        setStatus('Saving voice message...');
+
+        try {
+          const voiceBlob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+          const nextVoiceUrl = await uploadProfileVoiceClip(profile.id, voiceBlob);
+
+          setVoiceUrl(nextVoiceUrl);
+          setStatus('Voice message attached.');
+        } catch (error) {
+          setStatus(profilePostErrorMessage(error));
+        } finally {
+          setIsPosting(false);
+          stopVoiceStream();
+          voiceRecorderRef.current = null;
+          voiceChunksRef.current = [];
+        }
+      };
+
+      recorder.start();
+      setVoiceUrl('');
+      setIsRecordingVoice(true);
+      setStatus('Recording voice message. Tap the microphone again to stop.');
+    } catch {
+      setIsRecordingVoice(false);
+      stopVoiceStream();
+      setStatus('Microphone permission was not allowed.');
+    }
+  }
+
+  function selectEmoji(emoji: string) {
+    setSelectedEmoji(emoji);
+    setEmojiPickerVisible(false);
+    setStatus('Emoji attached to this post.');
+  }
+
+  function saveMusicAttachment() {
+    if (!musicUrl.trim()) {
+      setStatus('Paste a Spotify or music clip link first.');
+      return;
+    }
+
+    setMusicComposerVisible(false);
+    setStatus('Music attached to this post.');
+  }
+
+  function handleComposerTool(tool: 'emoji' | 'voice' | 'image' | 'options' | 'music' | 'hashtag') {
+    if (tool === 'emoji') {
+      setEmojiPickerVisible((current) => !current);
+      setMusicComposerVisible(false);
+      return;
+    }
+
+    if (tool === 'voice') {
+      void toggleVoiceRecording();
+      return;
+    }
+
+    if (tool === 'image') {
+      setStatus('Tap the picture square to add a photo.');
+      return;
+    }
+
+    if (tool === 'options') {
+      togglePostLocation();
+      return;
+    }
+
+    if (tool === 'music') {
+      setMusicComposerVisible((current) => !current);
+      setEmojiPickerVisible(false);
+      return;
+    }
+
+    addTextToPost('#');
   }
 
   return (
@@ -297,11 +485,25 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
         photoUrl={photoUrl}
         status={status}
         isPosting={isPosting}
+        visibility={postVisibility}
+        selectedEmoji={selectedEmoji}
+        emojiPickerVisible={emojiPickerVisible}
+        voiceUrl={voiceUrl}
+        isRecordingVoice={isRecordingVoice}
+        musicComposerVisible={musicComposerVisible}
+        musicUrl={musicUrl}
+        musicTitle={musicTitle}
         onTextChange={setPostText}
-        onPhotoUrlChange={setPhotoUrl}
         onPhotoSelected={handleWebPhoto}
         onClose={closePostComposer}
         onPublish={publishPost}
+        onToggleVisibility={togglePostVisibility}
+        onToggleLocation={togglePostLocation}
+        onEmojiSelected={selectEmoji}
+        onMusicUrlChange={setMusicUrl}
+        onMusicTitleChange={setMusicTitle}
+        onSaveMusic={saveMusicAttachment}
+        onToolPress={handleComposerTool}
       />
       {settingsVisible ? (
         <View style={styles.settingsOverlay} pointerEvents="box-none">
@@ -409,87 +611,411 @@ function CreatePostIcon() {
   );
 }
 
+function openExternalUrl(url: string) {
+  if (!url.trim()) {
+    return;
+  }
+
+  Linking.openURL(url.trim()).catch(() => {
+    Alert.alert('Music link', url.trim());
+  });
+}
+
 function PostComposerModal({
   visible,
   postText,
   photoUrl,
   status,
   isPosting,
+  visibility,
+  selectedEmoji,
+  emojiPickerVisible,
+  voiceUrl,
+  isRecordingVoice,
+  musicComposerVisible,
+  musicUrl,
+  musicTitle,
   onTextChange,
-  onPhotoUrlChange,
   onPhotoSelected,
   onClose,
-  onPublish
+  onPublish,
+  onToggleVisibility,
+  onToggleLocation,
+  onEmojiSelected,
+  onMusicUrlChange,
+  onMusicTitleChange,
+  onSaveMusic,
+  onToolPress
 }: {
   visible: boolean;
   postText: string;
   photoUrl: string;
   status: string | null;
   isPosting: boolean;
+  visibility: ProfilePost['visibility'];
+  selectedEmoji: string;
+  emojiPickerVisible: boolean;
+  voiceUrl: string;
+  isRecordingVoice: boolean;
+  musicComposerVisible: boolean;
+  musicUrl: string;
+  musicTitle: string;
   onTextChange: (value: string) => void;
-  onPhotoUrlChange: (value: string) => void;
   onPhotoSelected: (file: Blob) => void;
   onClose: () => void;
   onPublish: () => void;
+  onToggleVisibility: () => void;
+  onToggleLocation: () => void;
+  onEmojiSelected: (emoji: string) => void;
+  onMusicUrlChange: (value: string) => void;
+  onMusicTitleChange: (value: string) => void;
+  onSaveMusic: () => void;
+  onToolPress: (tool: 'emoji' | 'voice' | 'image' | 'options' | 'music' | 'hashtag') => void;
 }) {
-  const canPublish = Boolean(postText.trim() || photoUrl.trim()) && !isPosting;
+  const canPublish = Boolean(postText.trim() || photoUrl.trim() || selectedEmoji || voiceUrl || musicUrl.trim()) && !isPosting;
 
   return (
-    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
-      <View style={styles.postComposerOverlay}>
-        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.postComposerBackdrop} />
-        <View style={styles.postComposerSheet}>
-          <View style={styles.postComposerHeader}>
-            <CreatePostIcon />
-            <View style={styles.postComposerTitleBlock}>
-              <AppText style={styles.postComposerTitle}>Create post</AppText>
-              <AppText style={styles.postComposerMeta}>Post a picture or update onto your wall.</AppText>
-            </View>
-            <PressableScale accessibilityRole="button" onPress={onClose} style={styles.postComposerClose}>
-              <Ionicons name="close-outline" size={20} color={colors.ink} />
-            </PressableScale>
-          </View>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.postComposerScreen}>
+        <View style={styles.postComposerTopBar}>
+          <PressableScale
+            accessibilityRole="button"
+            onPress={onClose}
+            disabled={isPosting}
+            style={styles.postComposerCloseIcon}
+          >
+            <Ionicons name="close-outline" size={31} color={colors.ink} />
+          </PressableScale>
+          <PressableScale
+            accessibilityRole="button"
+            onPress={onPublish}
+            disabled={!canPublish}
+            style={[styles.postComposerSendButton, !canPublish && styles.postComposerSendButtonDisabled]}
+          >
+            <AppText style={[styles.postComposerSendText, !canPublish && styles.postComposerSendTextDisabled]}>
+              {isPosting ? 'Sending...' : 'Send'}
+            </AppText>
+          </PressableScale>
+        </View>
 
+        <View style={styles.postComposerBody}>
+          <PostImageTile
+            photoUrl={photoUrl.trim()}
+            disabled={isPosting}
+            onPhotoSelected={onPhotoSelected}
+          />
           <TextInput
             value={postText}
             onChangeText={onTextChange}
-            placeholder="Share anything you want people to know about you"
+            placeholder="What's on your mind?"
             placeholderTextColor={colors.muted}
             multiline
-            style={styles.postInput}
+            maxLength={1000}
+            style={styles.wallPostInput}
           />
-          <TextInput
-            value={photoUrl}
-            onChangeText={onPhotoUrlChange}
-            placeholder="Photo URL, or upload from web below"
-            placeholderTextColor={colors.muted}
-            autoCapitalize="none"
-            style={styles.photoInput}
-          />
-          <WebPhotoPicker disabled={isPosting} onPhotoSelected={onPhotoSelected} />
-          {photoUrl.trim() ? <Image source={{ uri: photoUrl.trim() }} style={styles.previewImage} /> : null}
-          {status ? <AppText style={styles.statusText}>{status}</AppText> : null}
-
-          <View style={styles.postComposerActions}>
-            <PressableScale
-              accessibilityRole="button"
-              onPress={onClose}
-              disabled={isPosting}
-              style={styles.cancelPostButton}
-            >
-              <AppText style={styles.cancelPostText}>Cancel</AppText>
-            </PressableScale>
-            <PrimaryButton
-              label={isPosting ? 'Posting...' : 'Post'}
-              icon="add-circle-outline"
-              disabled={!canPublish}
-              onPress={onPublish}
-              style={styles.publishPostButton}
+          {emojiPickerVisible ? (
+            <EmojiDock selectedEmoji={selectedEmoji} onEmojiSelected={onEmojiSelected} />
+          ) : null}
+          {selectedEmoji ? (
+            <View style={styles.composerAttachmentRow}>
+              <AppText style={styles.composerEmojiPreview}>{selectedEmoji}</AppText>
+              <AppText style={styles.composerAttachmentText}>Emoji attached</AppText>
+            </View>
+          ) : null}
+          {isRecordingVoice ? (
+            <View style={[styles.composerAttachmentRow, styles.recordingAttachment]}>
+              <Ionicons name="radio-button-on" size={18} color={colors.danger} />
+              <AppText style={styles.composerAttachmentText}>Recording voice message...</AppText>
+            </View>
+          ) : null}
+          {voiceUrl ? <VoiceAttachment voiceUrl={voiceUrl} label="Voice message attached" /> : null}
+          {musicComposerVisible ? (
+            <MusicComposerPanel
+              musicUrl={musicUrl}
+              musicTitle={musicTitle}
+              onMusicUrlChange={onMusicUrlChange}
+              onMusicTitleChange={onMusicTitleChange}
+              onSaveMusic={onSaveMusic}
             />
+          ) : null}
+          {musicUrl.trim() && !musicComposerVisible ? (
+            <MusicAttachment musicUrl={musicUrl} musicTitle={musicTitle} />
+          ) : null}
+          {status ? <AppText style={styles.statusText}>{status}</AppText> : null}
+        </View>
+
+        <View style={styles.postComposerFooter}>
+          <View style={styles.postComposerFooterTop}>
+            <PressableScale accessibilityRole="button" onPress={onToggleLocation} style={styles.locationPill}>
+              <Ionicons name="location" size={16} color="#8B6AF2" />
+              <AppText style={styles.locationPillText}>Add location</AppText>
+            </PressableScale>
+            <AppText style={styles.characterCount}>{postText.length}/1000</AppText>
+          </View>
+
+          <View style={styles.postToolBar}>
+            <ComposerToolButton icon="happy-outline" onPress={() => onToolPress('emoji')} />
+            <ComposerToolButton
+              icon={isRecordingVoice ? 'stop-circle-outline' : 'mic-circle-outline'}
+              active={isRecordingVoice}
+              onPress={() => onToolPress('voice')}
+            />
+            <ComposerPhotoToolButton
+              disabled={isPosting}
+              onPhotoSelected={onPhotoSelected}
+              onUnavailable={() => onToolPress('image')}
+            />
+            <ComposerToolButton icon="options-outline" onPress={() => onToolPress('options')} />
+            <ComposerToolButton
+              icon="musical-notes-outline"
+              active={musicComposerVisible || Boolean(musicUrl.trim())}
+              onPress={() => onToolPress('music')}
+            />
+            <PressableScale accessibilityRole="button" onPress={() => onToolPress('hashtag')} style={styles.hashToolButton}>
+              <AppText style={styles.hashTool}>#</AppText>
+            </PressableScale>
+            <PressableScale accessibilityRole="button" onPress={onToggleVisibility} style={styles.publicTool}>
+              <Ionicons
+                name={visibility === 'public' ? 'earth-outline' : 'lock-closed-outline'}
+                size={15}
+                color={colors.ink}
+              />
+              <AppText style={styles.publicToolText}>
+                {visibility === 'public' ? 'Public' : 'Private'}
+              </AppText>
+              <Ionicons name="chevron-forward" size={17} color={colors.ink} />
+            </PressableScale>
           </View>
         </View>
       </View>
     </Modal>
+  );
+}
+
+function EmojiDock({
+  selectedEmoji,
+  onEmojiSelected
+}: {
+  selectedEmoji: string;
+  onEmojiSelected: (emoji: string) => void;
+}) {
+  return (
+    <View style={styles.emojiDock}>
+      {emojiOptions.map((emoji) => (
+        <PressableScale
+          key={emoji}
+          accessibilityRole="button"
+          onPress={() => onEmojiSelected(emoji)}
+          style={[styles.emojiOption, selectedEmoji === emoji && styles.emojiOptionSelected]}
+        >
+          <AppText style={styles.emojiOptionText}>{emoji}</AppText>
+        </PressableScale>
+      ))}
+    </View>
+  );
+}
+
+function MusicComposerPanel({
+  musicUrl,
+  musicTitle,
+  onMusicUrlChange,
+  onMusicTitleChange,
+  onSaveMusic
+}: {
+  musicUrl: string;
+  musicTitle: string;
+  onMusicUrlChange: (value: string) => void;
+  onMusicTitleChange: (value: string) => void;
+  onSaveMusic: () => void;
+}) {
+  return (
+    <View style={styles.musicComposerPanel}>
+      <View style={styles.musicPanelTitleRow}>
+        <Ionicons name="musical-notes-outline" size={17} color="#8B6AF2" />
+        <AppText style={styles.musicPanelTitle}>Music clip</AppText>
+      </View>
+      <TextInput
+        value={musicUrl}
+        onChangeText={onMusicUrlChange}
+        placeholder="Paste Spotify or music link"
+        placeholderTextColor={colors.muted}
+        autoCapitalize="none"
+        style={styles.musicInput}
+      />
+      <TextInput
+        value={musicTitle}
+        onChangeText={onMusicTitleChange}
+        placeholder="Song title, artist, or mood"
+        placeholderTextColor={colors.muted}
+        style={styles.musicInput}
+      />
+      <PressableScale accessibilityRole="button" onPress={onSaveMusic} style={styles.musicSaveButton}>
+        <AppText style={styles.musicSaveText}>Attach music</AppText>
+      </PressableScale>
+    </View>
+  );
+}
+
+function VoiceAttachment({ voiceUrl, label }: { voiceUrl: string; label: string }) {
+  return (
+    <View style={styles.composerAttachmentRow}>
+      <Ionicons name="mic-outline" size={18} color="#8B6AF2" />
+      <View style={styles.attachmentCopy}>
+        <AppText style={styles.composerAttachmentText}>{label}</AppText>
+        {Platform.OS === 'web'
+          ? React.createElement('audio', {
+              controls: true,
+              src: voiceUrl,
+              style: {
+                width: '100%',
+                height: 32,
+                marginTop: 6
+              }
+            })
+          : (
+            <AppText style={styles.attachmentMeta}>Voice playback appears in web preview for now.</AppText>
+          )}
+      </View>
+    </View>
+  );
+}
+
+function MusicAttachment({
+  musicUrl,
+  musicTitle
+}: {
+  musicUrl: string;
+  musicTitle?: string;
+}) {
+  const label = musicTitle?.trim() || 'Music clip';
+
+  return (
+    <PressableScale accessibilityRole="button" onPress={() => openExternalUrl(musicUrl)} style={styles.musicAttachment}>
+      <View style={styles.musicAttachmentIcon}>
+        <Ionicons name="musical-notes" size={18} color={colors.onAccent} />
+      </View>
+      <View style={styles.attachmentCopy}>
+        <AppText style={styles.musicAttachmentTitle}>{label}</AppText>
+        <AppText style={styles.attachmentMeta}>{musicUrl.trim()}</AppText>
+      </View>
+      <Ionicons name="open-outline" size={17} color={colors.muted} />
+    </PressableScale>
+  );
+}
+
+function ComposerToolButton({
+  icon,
+  active = false,
+  onPress
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  active?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.composerToolButton, active && styles.composerToolButtonActive]}
+    >
+      <Ionicons name={icon} size={25} color={active ? colors.onAccent : colors.ink} />
+    </PressableScale>
+  );
+}
+
+function ComposerPhotoToolButton({
+  disabled,
+  onPhotoSelected,
+  onUnavailable
+}: {
+  disabled: boolean;
+  onPhotoSelected: (file: Blob) => void;
+  onUnavailable: () => void;
+}) {
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      onPress={Platform.OS === 'web' ? undefined : onUnavailable}
+      style={styles.composerToolButton}
+    >
+      <Ionicons name="image-outline" size={26} color={colors.ink} />
+      {Platform.OS === 'web'
+        ? React.createElement('input', {
+            type: 'file',
+            accept: 'image/*',
+            disabled,
+            onChange: (event: { target?: { files?: ArrayLike<Blob> | null; value?: string } }) => {
+              const file = event.target?.files?.[0];
+
+              if (!file) {
+                return;
+              }
+
+              onPhotoSelected(file);
+
+              if (event.target) {
+                event.target.value = '';
+              }
+            },
+            style: {
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer'
+            }
+          })
+        : null}
+    </PressableScale>
+  );
+}
+
+function PostImageTile({
+  photoUrl,
+  disabled,
+  onPhotoSelected
+}: {
+  photoUrl: string;
+  disabled: boolean;
+  onPhotoSelected: (file: Blob) => void;
+}) {
+  return (
+    <View style={styles.postImageTile}>
+      {photoUrl ? (
+        <Image source={{ uri: photoUrl }} style={styles.postImageTilePreview} />
+      ) : (
+        <Ionicons name="add-outline" size={38} color={colors.muted} />
+      )}
+      {Platform.OS === 'web'
+        ? React.createElement('input', {
+            type: 'file',
+            accept: 'image/*',
+            disabled,
+            onChange: (event: { target?: { files?: ArrayLike<Blob> | null; value?: string } }) => {
+              const file = event.target?.files?.[0];
+
+              if (!file) {
+                return;
+              }
+
+              onPhotoSelected(file);
+
+              if (event.target) {
+                event.target.value = '';
+              }
+            },
+            style: {
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer'
+            }
+          })
+        : null}
+    </View>
   );
 }
 
@@ -883,16 +1409,40 @@ function PostCard({ post }: { post: ProfilePost }) {
           <AppText style={styles.postAuthor}>{post.authorNickname}</AppText>
           <AppText style={styles.postTime}>{post.createdAt.toLocaleDateString()}</AppText>
         </View>
+        <View style={styles.postVisibilityBadge}>
+          <Ionicons
+            name={post.visibility === 'public' ? 'earth-outline' : 'lock-closed-outline'}
+            size={13}
+            color={post.visibility === 'public' ? colors.accent : colors.muted}
+          />
+          <AppText style={styles.postVisibilityText}>
+            {post.visibility === 'public' ? 'Public' : 'Private'}
+          </AppText>
+        </View>
         <PressableScale
           accessibilityRole="button"
-          onPress={() => Alert.alert('Public post', 'This post is visible on the member profile.')}
+          onPress={() =>
+            Alert.alert(
+              post.visibility === 'public' ? 'Public post' : 'Private post',
+              post.visibility === 'public'
+                ? 'This post is visible on the member profile.'
+                : 'This post is private to this account.'
+            )
+          }
           style={styles.postMenu}
         >
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.muted} />
         </PressableScale>
       </View>
+      {post.emoji ? (
+        <View style={styles.postEmojiBlock}>
+          <AppText style={styles.postEmojiText}>{post.emoji}</AppText>
+        </View>
+      ) : null}
       {post.body ? <AppText style={styles.postBody}>{post.body}</AppText> : null}
       {post.photoUrl ? <Image source={{ uri: post.photoUrl }} style={styles.postImage} /> : null}
+      {post.voiceUrl ? <VoiceAttachment voiceUrl={post.voiceUrl} label="Voice message" /> : null}
+      {post.musicUrl ? <MusicAttachment musicUrl={post.musicUrl} musicTitle={post.musicTitle} /> : null}
     </View>
   );
 }
@@ -1345,44 +1895,81 @@ const styles = StyleSheet.create({
     bottom: 8,
     transform: [{ rotate: '-32deg' }]
   },
-  postComposerOverlay: {
+  postComposerScreen: {
     flex: 1,
-    justifyContent: 'flex-end'
+    backgroundColor: colors.surface
   },
-  postComposerBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(16, 17, 20, 0.42)'
-  },
-  postComposerSheet: {
-    gap: 10,
-    padding: 16,
-    paddingBottom: 22,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderColor: colors.line
-  },
-  postComposerHeader: {
+  postComposerTopBar: {
+    minHeight: 70,
+    paddingTop: 20,
+    paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface
   },
-  postComposerTitleBlock: {
-    flex: 1
+  postComposerCloseIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
-  postComposerTitle: {
-    fontSize: 18,
+  postComposerSendButton: {
+    minWidth: 72,
+    minHeight: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  postComposerSendButtonDisabled: {
+    backgroundColor: colors.surfaceMuted
+  },
+  postComposerSendText: {
+    color: colors.onAccent,
+    fontSize: 14,
     fontWeight: '900'
   },
-  postComposerMeta: {
-    marginTop: 2,
+  postComposerSendTextDisabled: {
     color: colors.muted,
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700'
   },
-  postComposerClose: {
+  postComposerBody: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    backgroundColor: colors.surface
+  },
+  postImageTile: {
+    width: 82,
+    height: 82,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted
+  },
+  postImageTilePreview: {
+    width: '100%',
+    height: '100%'
+  },
+  wallPostInput: {
+    minHeight: 150,
+    marginTop: 18,
+    paddingVertical: 0,
+    color: colors.ink,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '400',
+    textAlignVertical: 'top'
+  },
+  emojiDock: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 10
+  },
+  emojiOption: {
     width: 36,
     height: 36,
     borderRadius: 18,
@@ -1390,23 +1977,187 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
   },
-  postComposerActions: {
-    flexDirection: 'row',
-    gap: 10
+  emojiOptionSelected: {
+    backgroundColor: '#EDE8FF'
   },
-  cancelPostButton: {
-    flex: 0.8,
+  emojiOptionText: {
+    fontSize: 20,
+    lineHeight: 24
+  },
+  composerAttachmentRow: {
     minHeight: 48,
-    borderRadius: 8,
+    marginTop: 10,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 10,
     backgroundColor: colors.surfaceMuted
   },
-  cancelPostText: {
+  recordingAttachment: {
+    backgroundColor: colors.dangerSoft
+  },
+  composerEmojiPreview: {
+    fontSize: 24,
+    lineHeight: 28
+  },
+  composerAttachmentText: {
+    color: colors.ink,
+    fontSize: 12,
     fontWeight: '900'
   },
-  publishPostButton: {
-    flex: 1.2
+  attachmentCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  attachmentMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700'
+  },
+  musicComposerPanel: {
+    marginTop: 10,
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceMuted
+  },
+  musicPanelTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  musicPanelTitle: {
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  musicInput: {
+    minHeight: 38,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    color: colors.ink,
+    fontSize: 12,
+    backgroundColor: colors.surface,
+    fontWeight: '700'
+  },
+  musicSaveButton: {
+    alignSelf: 'flex-start',
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  musicSaveText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  musicAttachment: {
+    minHeight: 56,
+    marginTop: 10,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surfaceMuted
+  },
+  musicAttachmentIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  musicAttachmentTitle: {
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  postComposerFooter: {
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    gap: 8,
+    backgroundColor: colors.surface
+  },
+  postComposerFooterTop: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  locationPill: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderWidth: 1,
+    borderColor: '#D8CEF9',
+    backgroundColor: colors.surface
+  },
+  locationPillText: {
+    color: '#8B6AF2',
+    fontSize: 13,
+    fontWeight: '900'
+  },
+  characterCount: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '900'
+  },
+  postToolBar: {
+    minHeight: 54,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15
+  },
+  composerToolButton: {
+    width: 30,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    overflow: 'hidden'
+  },
+  composerToolButtonActive: {
+    width: 36,
+    borderRadius: 18,
+    backgroundColor: '#8B6AF2'
+  },
+  hashToolButton: {
+    width: 30,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  hashTool: {
+    color: colors.ink,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '400'
+  },
+  publicTool: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 40,
+    paddingLeft: 4
+  },
+  publicToolText: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '900'
   },
   feedHeader: {
     flexDirection: 'row',
@@ -1467,6 +2218,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700'
   },
+  postVisibilityBadge: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceMuted
+  },
+  postVisibilityText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '900'
+  },
   postMenu: {
     width: 34,
     height: 34,
@@ -1478,6 +2243,19 @@ const styles = StyleSheet.create({
   postBody: {
     lineHeight: 20,
     fontWeight: '700'
+  },
+  postEmojiBlock: {
+    alignSelf: 'flex-start',
+    minWidth: 50,
+    minHeight: 50,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  postEmojiText: {
+    fontSize: 30,
+    lineHeight: 34
   },
   postImage: {
     width: '100%',

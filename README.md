@@ -59,6 +59,40 @@ Manual checks:
 - Video starts with camera off and microphone muted.
 - Nearby profile actions do not create chats.
 
+## Store Builds
+
+This app is configured for Expo EAS builds with `eas.json`.
+
+Install and log into EAS once:
+
+```bash
+npm install -g eas-cli
+eas login
+eas init
+```
+
+Build an Android APK for phone testing:
+
+```bash
+npm run build:android:preview
+```
+
+Build store files:
+
+```bash
+npm run build:android:store
+npm run build:ios:store
+```
+
+Submit store builds:
+
+```bash
+npm run submit:android
+npm run submit:ios
+```
+
+See `STORE_RELEASE_CHECKLIST.md` for the full Play Store and App Store release checklist.
+
 ## Backend Next Steps
 
 - Replace `src/services/localAppServices.ts` with Firebase-backed implementations.
