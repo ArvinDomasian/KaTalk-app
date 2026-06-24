@@ -13,9 +13,15 @@ import { AppText } from './src/components/AppText';
 import { PressableScale } from './src/components/PressableScale';
 import { signOutCurrentUser } from './src/services/firebaseAuthService';
 import { saveFirebaseUserProfile } from './src/services/firebaseProfileService';
-import { clearStoredProfile, loadStoredProfile, saveStoredProfile } from './src/services/profileStorage';
+import {
+  clearStoredProfile,
+  loadStoredProfile,
+  loadStoredThemeMode,
+  saveStoredProfile,
+  saveStoredThemeMode
+} from './src/services/profileStorage';
 import { colors } from './src/theme';
-import type { ActiveTab, UserProfile } from './src/types';
+import type { ActiveTab, ThemeMode, UserProfile } from './src/types';
 
 const tabs: Array<{ key: ActiveTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
   { key: 'message', label: 'Message', icon: 'chatbubbles-outline' },
@@ -30,7 +36,9 @@ export default function App() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('message');
   const [isMessageChatting, setIsMessageChatting] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadStoredThemeMode());
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const darkMode = themeMode === 'dark';
 
   useEffect(() => {
     return () => {
@@ -80,6 +88,13 @@ export default function App() {
     void saveFirebaseUserProfile(nextProfile);
   }
 
+  function updateThemeMode(nextDarkMode: boolean) {
+    const nextThemeMode: ThemeMode = nextDarkMode ? 'dark' : 'light';
+
+    setThemeMode(nextThemeMode);
+    saveStoredThemeMode(nextThemeMode);
+  }
+
   const activeScreen = useMemo(() => {
     if (isLoggingOut) {
       return (
@@ -107,21 +122,30 @@ export default function App() {
       return (
         <MessageMatchScreen
           profile={profile}
+          darkMode={darkMode}
           onChattingStateChange={setIsMessageChatting}
         />
       );
     }
 
     if (activeTab === 'rooms') {
-      return <VoiceRoomsScreen profile={profile} />;
+      return <VoiceRoomsScreen profile={profile} darkMode={darkMode} />;
     }
 
     if (activeTab === 'video') {
-      return <VideoNearbyScreen profile={profile} />;
+      return <VideoNearbyScreen profile={profile} darkMode={darkMode} />;
     }
 
-    return <ProfileScreen profile={profile} onLogout={logOut} onProfileUpdate={updateProfile} />;
-  }, [activeTab, isEnteringApp, isLoggingOut, profile]);
+    return (
+      <ProfileScreen
+        profile={profile}
+        darkMode={darkMode}
+        onDarkModeChange={updateThemeMode}
+        onLogout={logOut}
+        onProfileUpdate={updateProfile}
+      />
+    );
+  }, [activeTab, darkMode, isEnteringApp, isLoggingOut, profile]);
 
   useEffect(() => {
     if (activeTab !== 'message') {
@@ -132,15 +156,17 @@ export default function App() {
   const shouldShowTabs = Boolean(profile && !isEnteringApp && !isLoggingOut && !isMessageChatting);
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.root, darkMode && styles.rootDark]}>
+      <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={[styles.shell, shouldShowTabs && styles.shellWithTabs]}>
         {activeScreen}
       </View>
       {shouldShowTabs ? (
-        <View style={styles.tabBar}>
+        <View style={[styles.tabBar, darkMode && styles.tabBarDark]}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
+            const inactiveColor = darkMode ? '#AEB5C2' : colors.muted;
+
             return (
               <PressableScale
                 key={tab.key}
@@ -152,9 +178,9 @@ export default function App() {
                 <Ionicons
                   name={tab.icon}
                   size={22}
-                  color={isActive ? colors.onAccent : colors.muted}
+                  color={isActive ? colors.onAccent : inactiveColor}
                 />
-                <AppText style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                <AppText style={[styles.tabLabel, darkMode && styles.tabLabelDark, isActive && styles.tabLabelActive]}>
                   {tab.label}
                 </AppText>
               </PressableScale>
@@ -171,6 +197,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
     position: 'relative'
+  },
+  rootDark: {
+    backgroundColor: '#101217'
   },
   shell: {
     flex: 1
@@ -197,6 +226,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 6
   },
+  tabBarDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#171A22',
+    shadowColor: '#000000',
+    shadowOpacity: 0.34
+  },
   tabButton: {
     flex: 1,
     minHeight: 48,
@@ -212,6 +247,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.muted,
     fontWeight: '700'
+  },
+  tabLabelDark: {
+    color: '#AEB5C2'
   },
   tabLabelActive: {
     color: colors.onAccent

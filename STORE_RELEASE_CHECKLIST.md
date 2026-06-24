@@ -34,16 +34,16 @@ eas init
 Build an Android APK for phone testing:
 
 ```bash
-npm run build:android:preview
+npm run build:android:apk
 ```
 
-Build the Android App Bundle for Google Play:
+Build the Android App Bundle for Google Play. Google Play normally wants this AAB file, not the APK:
 
 ```bash
-npm run build:android:store
+npm run build:android:aab
 ```
 
-Build the iOS app for TestFlight/App Store:
+Build the iOS app for TestFlight/App Store. Apple does not use APK; it uses an iOS build/IPA:
 
 ```bash
 npm run build:ios:store

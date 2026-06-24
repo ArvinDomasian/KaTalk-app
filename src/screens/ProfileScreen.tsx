@@ -6,8 +6,11 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import {
   createProfilePost,
+  deleteProfilePost,
+  loadVisibleProfilePosts,
   profilePostErrorMessage,
   subscribeProfilePosts,
+  updateProfilePostBody,
   uploadProfileAvatar,
   uploadProfilePostPhoto,
   uploadProfileVoiceClip
@@ -17,6 +20,8 @@ import type { ProfilePost, UserProfile } from '../types';
 
 type Props = {
   profile: UserProfile;
+  darkMode: boolean;
+  onDarkModeChange: (value: boolean) => void;
   onLogout: () => void;
   onProfileUpdate: (profile: UserProfile) => void;
 };
@@ -30,6 +35,7 @@ type NotificationSettings = {
 };
 
 const webBlurBackdropStyle = Platform.OS === 'web' ? ({ backdropFilter: 'blur(8px)' } as any) : null;
+const webTextInputNoOutlineStyle = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as any) : null;
 const interestSuggestions = [
   'Coffee',
   'Movies',
@@ -49,10 +55,16 @@ const interestSuggestions = [
 ];
 const emojiOptions = ['😊', '😂', '😍', '🥰', '😎', '😭', '🔥', '✨', '❤️', '👍'];
 
-export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
+export function ProfileScreen({
+  profile,
+  darkMode,
+  onDarkModeChange,
+  onLogout,
+  onProfileUpdate
+}: Props) {
   const [postText, setPostText] = useState('');
   const [photoUrl, setPhotoUrl] = useState('');
-  const [posts, setPosts] = useState<ProfilePost[]>([]);
+  const [posts, setPosts] = useState<ProfilePost[]>(() => loadVisibleProfilePosts(profile.id));
   const [isPosting, setIsPosting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [postComposerVisible, setPostComposerVisible] = useState(false);
@@ -64,10 +76,12 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
   const [musicComposerVisible, setMusicComposerVisible] = useState(false);
   const [musicUrl, setMusicUrl] = useState('');
   const [musicTitle, setMusicTitle] = useState('');
+  const [postOptionsPost, setPostOptionsPost] = useState<ProfilePost | null>(null);
+  const [editingPost, setEditingPost] = useState<ProfilePost | null>(null);
+  const [editingPostText, setEditingPostText] = useState('');
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [settingsPanel, setSettingsPanel] = useState<'main' | 'edit' | 'avatar' | 'notifications'>('main');
   const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
   const [editName, setEditName] = useState(profile.nickname);
   const [editBirthday, setEditBirthday] = useState(profile.dateOfBirth);
   const [editInterests, setEditInterests] = useState(profile.interests.join(', '));
@@ -90,6 +104,8 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
   const voiceChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
+    setPosts(loadVisibleProfilePosts(profile.id));
+
     return subscribeProfilePosts(
       profile.id,
       setPosts,
@@ -163,9 +179,62 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     }
   }
 
+  function openPostOptions(post: ProfilePost) {
+    setPostOptionsPost(post);
+  }
+
+  function closePostOptions() {
+    setPostOptionsPost(null);
+  }
+
+  function startEditPost(post: ProfilePost) {
+    setPostOptionsPost(null);
+    setEditingPost(post);
+    setEditingPostText(post.body);
+  }
+
+  function closeEditPost() {
+    setEditingPost(null);
+    setEditingPostText('');
+  }
+
+  function savePostEdit() {
+    if (!editingPost) {
+      return;
+    }
+
+    try {
+      const updatedPost = updateProfilePostBody(editingPost.id, editingPostText);
+      setPosts((current) =>
+        current.map((post) => (post.id === updatedPost.id ? updatedPost : post))
+      );
+      closeEditPost();
+    } catch (error) {
+      Alert.alert('Edit failed', profilePostErrorMessage(error));
+    }
+  }
+
+  function removePost(post: ProfilePost) {
+    deleteProfilePost(post.id);
+    setPosts((current) => current.filter((item) => item.id !== post.id));
+    setPostOptionsPost(null);
+  }
+
   function openSettings() {
     setLogoutConfirmVisible(false);
     setSettingsPanel('main');
+    setSettingsStatus(null);
+    setSettingsVisible(true);
+    Animated.timing(settingsProgress, {
+      toValue: 1,
+      duration: 260,
+      useNativeDriver: true
+    }).start();
+  }
+
+  function openAvatarSettings() {
+    setLogoutConfirmVisible(false);
+    setSettingsPanel('avatar');
     setSettingsStatus(null);
     setSettingsVisible(true);
     Animated.timing(settingsProgress, {
@@ -282,19 +351,13 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
   function togglePostVisibility() {
     setPostVisibility((current) => {
       const next = current === 'public' ? 'private' : 'public';
-      setStatus(
-        next === 'public'
-          ? 'This post will be visible on the public wall.'
-          : 'This post will be private to your wall.'
-      );
+      setStatus(null);
       return next;
     });
   }
 
   function togglePostLocation() {
-    setStatus((current) =>
-      current === 'Location added to this post.' ? 'Location removed from this post.' : 'Location added to this post.'
-    );
+    setStatus(null);
   }
 
   function stopVoiceStream() {
@@ -311,7 +374,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     }
 
     if (Platform.OS !== 'web') {
-      setStatus('Voice messages on phone builds need the Expo audio package before recording can turn on.');
+      setStatus(null);
       return;
     }
 
@@ -319,7 +382,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     const MediaRecorderApi = (globalThis as any).MediaRecorder;
 
     if (!mediaDevices?.getUserMedia || !MediaRecorderApi) {
-      setStatus('Voice recording is not available in this browser.');
+      setStatus(null);
       return;
     }
 
@@ -340,14 +403,14 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
       recorder.onstop = async () => {
         setIsRecordingVoice(false);
         setIsPosting(true);
-        setStatus('Saving voice message...');
+        setStatus(null);
 
         try {
           const voiceBlob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
           const nextVoiceUrl = await uploadProfileVoiceClip(profile.id, voiceBlob);
 
           setVoiceUrl(nextVoiceUrl);
-          setStatus('Voice message attached.');
+          setStatus(null);
         } catch (error) {
           setStatus(profilePostErrorMessage(error));
         } finally {
@@ -361,28 +424,28 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
       recorder.start();
       setVoiceUrl('');
       setIsRecordingVoice(true);
-      setStatus('Recording voice message. Tap the microphone again to stop.');
+      setStatus(null);
     } catch {
       setIsRecordingVoice(false);
       stopVoiceStream();
-      setStatus('Microphone permission was not allowed.');
+      setStatus(null);
     }
   }
 
   function selectEmoji(emoji: string) {
     setSelectedEmoji(emoji);
     setEmojiPickerVisible(false);
-    setStatus('Emoji attached to this post.');
+    setStatus(null);
   }
 
   function saveMusicAttachment() {
     if (!musicUrl.trim()) {
-      setStatus('Paste a Spotify or music clip link first.');
+      setStatus(null);
       return;
     }
 
     setMusicComposerVisible(false);
-    setStatus('Music attached to this post.');
+    setStatus(null);
   }
 
   function handleComposerTool(tool: 'emoji' | 'voice' | 'image' | 'options' | 'music' | 'hashtag') {
@@ -398,7 +461,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     }
 
     if (tool === 'image') {
-      setStatus('Tap the picture square to add a photo.');
+      setStatus(null);
       return;
     }
 
@@ -420,55 +483,109 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
     <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
-          <AppText style={styles.screenTitle}>Profile</AppText>
+          <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>Profile</AppText>
           <PressableScale
             accessibilityRole="button"
             onPress={settingsVisible ? closeSettings : openSettings}
-            style={styles.profileIconBadge}
+            style={[styles.profileIconBadge, darkMode && styles.profileIconBadgeDark]}
           >
-            <Ionicons name={settingsVisible ? 'close-outline' : 'settings-outline'} size={25} color={colors.ink} />
+            <Ionicons
+              name={settingsVisible ? 'close-outline' : 'settings-outline'}
+              size={25}
+              color={darkMode ? colors.onAccent : colors.ink}
+            />
           </PressableScale>
         </View>
 
-        <View style={styles.profileHero}>
-          <View style={styles.avatarCircle}>
+        <View style={[styles.profileHero, darkMode && styles.cardDark]}>
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
+            onPress={openAvatarSettings}
+            style={[styles.avatarCircle, darkMode && styles.avatarCircleDark]}
+          >
             {profile.avatarUrl ? (
               <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} />
             ) : (
               <Ionicons name="person-circle-outline" size={82} color={colors.accent} />
             )}
-          </View>
+            <View style={styles.avatarEditBadge}>
+              <Ionicons name="camera" size={14} color={colors.onAccent} />
+            </View>
+            {Platform.OS === 'web'
+              ? React.createElement('input', {
+                  type: 'file',
+                  accept: 'image/*',
+                  onChange: (event: { target?: { files?: ArrayLike<Blob> | null; value?: string } }) => {
+                    const file = event.target?.files?.[0];
+
+                    if (!file) {
+                      return;
+                    }
+
+                    void handleAvatarUpload(file);
+
+                    if (event.target) {
+                      event.target.value = '';
+                    }
+                  },
+                  style: {
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    opacity: 0,
+                    cursor: 'pointer'
+                  }
+                })
+              : null}
+          </PressableScale>
           <View style={styles.profileCopy}>
-            <AppText style={styles.profileName}>{profile.nickname}</AppText>
-            <AppText style={styles.profileMeta}>
+            <AppText style={[styles.profileName, darkMode && styles.textOnDark]}>{profile.nickname}</AppText>
+            <AppText style={[styles.profileMeta, darkMode && styles.mutedOnDark]}>
               {profile.gender} - Looking for {profile.preference}
             </AppText>
             <View style={styles.interestRow}>
               {profile.interests.slice(0, 4).map((interest) => (
-                <View key={interest} style={styles.interestChip}>
-                  <AppText style={styles.interestText}>{interest}</AppText>
+                <View key={interest} style={[styles.interestChip, darkMode && styles.softSurfaceDark]}>
+                  <AppText style={[styles.interestText, darkMode && styles.textOnDark]}>{interest}</AppText>
                 </View>
               ))}
             </View>
+            <PressableScale
+              accessibilityRole="button"
+              onPress={openAvatarSettings}
+              style={[styles.changePhotoButton, darkMode && styles.softSurfaceDark]}
+            >
+              <Ionicons name="image-outline" size={15} color={colors.accent} />
+              <AppText style={styles.changePhotoText}>Change photo</AppText>
+            </PressableScale>
           </View>
         </View>
 
-        <View style={styles.publicNote}>
+        <View style={[styles.publicNote, darkMode && styles.publicNoteDark]}>
           <Ionicons name="earth-outline" size={18} color={colors.accent} />
-          <AppText style={styles.publicNoteText}>
+          <AppText style={[styles.publicNoteText, darkMode && styles.textOnDark]}>
             Posts here are public on your profile, so other KaTalk members can see them when they open your profile.
           </AppText>
         </View>
 
         <View style={styles.feedHeader}>
-          <AppText style={styles.sectionTitle}>Public posts</AppText>
+          <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>Public posts</AppText>
           <AppText style={styles.feedCount}>{posts.length}</AppText>
         </View>
 
         {posts.length > 0 ? (
-          posts.map((post) => <PostCard key={post.id} post={post} />)
+          posts.map((post) => (
+            <PostCard
+              key={post.id}
+              post={post}
+              darkMode={darkMode}
+              onOpenOptions={openPostOptions}
+            />
+          ))
         ) : (
-          <View style={styles.emptyState}>
+          <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
             <Ionicons name="reader-outline" size={24} color={colors.muted} />
             <AppText style={styles.emptyText}>No public posts yet.</AppText>
           </View>
@@ -504,6 +621,21 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
         onMusicTitleChange={setMusicTitle}
         onSaveMusic={saveMusicAttachment}
         onToolPress={handleComposerTool}
+      />
+      <PostOptionsModal
+        post={postOptionsPost}
+        darkMode={darkMode}
+        onClose={closePostOptions}
+        onEdit={startEditPost}
+        onDelete={removePost}
+      />
+      <EditPostModal
+        post={editingPost}
+        darkMode={darkMode}
+        text={editingPostText}
+        onTextChange={setEditingPostText}
+        onClose={closeEditPost}
+        onSave={savePostEdit}
       />
       {settingsVisible ? (
         <View style={styles.settingsOverlay} pointerEvents="box-none">
@@ -563,7 +695,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
               <SettingsMainPanel
                 darkMode={darkMode}
                 profile={profile}
-                onDarkModeChange={setDarkMode}
+                onDarkModeChange={onDarkModeChange}
                 onOpenEdit={() => setSettingsPanel('edit')}
                 onOpenAvatar={() => setSettingsPanel('avatar')}
                 onOpenNotifications={() => setSettingsPanel('notifications')}
@@ -575,6 +707,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
             ) : null}
             {settingsPanel === 'edit' ? (
               <EditProfilePanel
+                darkMode={darkMode}
                 editName={editName}
                 editBirthday={editBirthday}
                 editInterests={editInterests}
@@ -586,6 +719,7 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
             ) : null}
             {settingsPanel === 'avatar' ? (
               <AvatarPanel
+                darkMode={darkMode}
                 avatarUrl={avatarDraftUrl}
                 onAvatarUrlChange={setAvatarDraftUrl}
                 onSave={() => saveAvatar()}
@@ -593,7 +727,11 @@ export function ProfileScreen({ profile, onLogout, onProfileUpdate }: Props) {
               />
             ) : null}
             {settingsPanel === 'notifications' ? (
-              <NotificationsPanel notifications={notifications} onToggle={toggleNotification} />
+              <NotificationsPanel
+                darkMode={darkMode}
+                notifications={notifications}
+                onToggle={toggleNotification}
+              />
             ) : null}
           </Animated.View>
         </View>
@@ -711,7 +849,7 @@ function PostComposerModal({
             placeholderTextColor={colors.muted}
             multiline
             maxLength={1000}
-            style={styles.wallPostInput}
+            style={[styles.wallPostInput, webTextInputNoOutlineStyle]}
           />
           {emojiPickerVisible ? (
             <EmojiDock selectedEmoji={selectedEmoji} onEmojiSelected={onEmojiSelected} />
@@ -741,7 +879,6 @@ function PostComposerModal({
           {musicUrl.trim() && !musicComposerVisible ? (
             <MusicAttachment musicUrl={musicUrl} musicTitle={musicTitle} />
           ) : null}
-          {status ? <AppText style={styles.statusText}>{status}</AppText> : null}
         </View>
 
         <View style={styles.postComposerFooter}>
@@ -1051,9 +1188,10 @@ function SettingsMainPanel({
       <View style={styles.settingsSection}>
         <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Mode</AppText>
         <SwitchSettingRow
+          darkMode={darkMode}
           icon={darkMode ? 'moon-outline' : 'sunny-outline'}
           title={darkMode ? 'Dark mode' : 'Light mode'}
-          meta="Switch the profile area between light and dark."
+          meta="Switch KaTalk between light and dark."
           value={darkMode}
           onValueChange={onDarkModeChange}
         />
@@ -1062,18 +1200,21 @@ function SettingsMainPanel({
       <View style={styles.settingsSection}>
         <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Profile</AppText>
         <SettingsOption
+          darkMode={darkMode}
           icon="create-outline"
           title="Edit profile"
           meta="Name, birthday, and interests"
           onPress={onOpenEdit}
         />
         <SettingsOption
+          darkMode={darkMode}
           icon="image-outline"
           title="Avatar"
           meta="Change your profile picture"
           onPress={onOpenAvatar}
         />
         <SettingsOption
+          darkMode={darkMode}
           icon="notifications-outline"
           title="Notifications"
           meta="Messages, sound, vibration, invites"
@@ -1083,10 +1224,12 @@ function SettingsMainPanel({
 
       <View style={styles.settingsSection}>
         <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Account</AppText>
-        <View style={styles.settingRow}>
+        <View style={[styles.settingRow, darkMode && styles.drawerRowDark]}>
           <View style={styles.settingTextBlock}>
-            <AppText style={styles.settingTitle}>Signed in as</AppText>
-            <AppText style={styles.settingMeta}>{profile.authContact || profile.nickname}</AppText>
+            <AppText style={[styles.settingTitle, darkMode && styles.textOnDark]}>Signed in as</AppText>
+            <AppText style={[styles.settingMeta, darkMode && styles.drawerMutedText]}>
+              {profile.authContact || profile.nickname}
+            </AppText>
           </View>
           <Ionicons name="shield-checkmark-outline" size={20} color={colors.accent} />
         </View>
@@ -1118,6 +1261,7 @@ function SettingsMainPanel({
 }
 
 function EditProfilePanel({
+  darkMode,
   editName,
   editBirthday,
   editInterests,
@@ -1126,6 +1270,7 @@ function EditProfilePanel({
   onInterestsChange,
   onSave
 }: {
+  darkMode: boolean;
   editName: string;
   editBirthday: string;
   editInterests: string;
@@ -1154,13 +1299,13 @@ function EditProfilePanel({
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.settingsSection}>
-        <AppText style={styles.settingsSectionLabel}>Basics</AppText>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Basics</AppText>
         <TextInput
           value={editName}
           onChangeText={onNameChange}
           placeholder="Display name"
           placeholderTextColor={colors.muted}
-          style={styles.settingsInput}
+          style={[styles.settingsInput, darkMode && styles.settingsInputDark]}
         />
         <TextInput
           value={editBirthday}
@@ -1168,19 +1313,19 @@ function EditProfilePanel({
           placeholder="Birthday, YYYY-MM-DD"
           placeholderTextColor={colors.muted}
           keyboardType="numbers-and-punctuation"
-          style={styles.settingsInput}
+          style={[styles.settingsInput, darkMode && styles.settingsInputDark]}
         />
       </View>
 
       <View style={styles.settingsSection}>
-        <AppText style={styles.settingsSectionLabel}>Interests</AppText>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Interests</AppText>
         <TextInput
           value={editInterests}
           onChangeText={onInterestsChange}
           placeholder="Coffee, Music, Deep talks"
           placeholderTextColor={colors.muted}
           multiline
-          style={[styles.settingsInput, styles.settingsTextArea]}
+          style={[styles.settingsInput, styles.settingsTextArea, darkMode && styles.settingsInputDark]}
         />
         <View style={styles.suggestionWrap}>
           {interestSuggestions.map((interest) => (
@@ -1202,11 +1347,13 @@ function EditProfilePanel({
 }
 
 function AvatarPanel({
+  darkMode,
   avatarUrl,
   onAvatarUrlChange,
   onSave,
   onUpload
 }: {
+  darkMode: boolean;
   avatarUrl: string;
   onAvatarUrlChange: (value: string) => void;
   onSave: () => void;
@@ -1220,31 +1367,83 @@ function AvatarPanel({
       contentContainerStyle={styles.settingsPanelContent}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.avatarPreview}>
-        {cleanAvatarUrl ? (
-          <Image source={{ uri: cleanAvatarUrl }} style={styles.avatarPreviewImage} />
-        ) : (
-          <Ionicons name="person-circle-outline" size={82} color={colors.accent} />
-        )}
-      </View>
+      <AvatarPhotoPicker
+        avatarUrl={cleanAvatarUrl}
+        darkMode={darkMode}
+        onUpload={onUpload}
+      />
+      <AppText style={[styles.avatarPickerHint, darkMode && styles.drawerMutedText]}>
+        Tap the picture above to upload a new profile photo.
+      </AppText>
       <TextInput
         value={avatarUrl}
         onChangeText={onAvatarUrlChange}
         placeholder="Paste avatar photo URL"
         placeholderTextColor={colors.muted}
         autoCapitalize="none"
-        style={styles.settingsInput}
+        style={[styles.settingsInput, darkMode && styles.settingsInputDark]}
       />
-      <WebPhotoPicker disabled={false} onPhotoSelected={onUpload} />
       <PrimaryButton label="Save avatar" icon="image-outline" onPress={onSave} />
     </ScrollView>
   );
 }
 
+function AvatarPhotoPicker({
+  avatarUrl,
+  darkMode,
+  onUpload
+}: {
+  avatarUrl: string;
+  darkMode: boolean;
+  onUpload: (file: Blob) => void;
+}) {
+  return (
+    <View style={[styles.avatarPreview, darkMode && styles.avatarCircleDark]}>
+      {avatarUrl ? (
+        <Image source={{ uri: avatarUrl }} style={styles.avatarPreviewImage} />
+      ) : (
+        <Ionicons name="person-circle-outline" size={82} color={colors.accent} />
+      )}
+      <View style={styles.avatarPreviewOverlay}>
+        <Ionicons name="camera" size={18} color={colors.onAccent} />
+      </View>
+      {Platform.OS === 'web'
+        ? React.createElement('input', {
+            type: 'file',
+            accept: 'image/*',
+            onChange: (event: { target?: { files?: ArrayLike<Blob> | null; value?: string } }) => {
+              const file = event.target?.files?.[0];
+
+              if (!file) {
+                return;
+              }
+
+              onUpload(file);
+
+              if (event.target) {
+                event.target.value = '';
+              }
+            },
+            style: {
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              cursor: 'pointer'
+            }
+          })
+        : null}
+    </View>
+  );
+}
+
 function NotificationsPanel({
+  darkMode,
   notifications,
   onToggle
 }: {
+  darkMode: boolean;
   notifications: NotificationSettings;
   onToggle: (key: keyof NotificationSettings) => void;
 }) {
@@ -1255,6 +1454,7 @@ function NotificationsPanel({
       showsVerticalScrollIndicator={false}
     >
       <SwitchSettingRow
+        darkMode={darkMode}
         icon="chatbubble-ellipses-outline"
         title="In-app messages"
         meta="Saved-match and profile message alerts"
@@ -1262,6 +1462,7 @@ function NotificationsPanel({
         onValueChange={() => onToggle('inAppMessages')}
       />
       <SwitchSettingRow
+        darkMode={darkMode}
         icon="notifications-outline"
         title="Show notifications"
         meta="Allow visible alerts from KaTalk"
@@ -1269,6 +1470,7 @@ function NotificationsPanel({
         onValueChange={() => onToggle('showNotifications')}
       />
       <SwitchSettingRow
+        darkMode={darkMode}
         icon="volume-high-outline"
         title="Sound"
         meta="Play sound for new alerts"
@@ -1276,6 +1478,7 @@ function NotificationsPanel({
         onValueChange={() => onToggle('sound')}
       />
       <SwitchSettingRow
+        darkMode={darkMode}
         icon="phone-portrait-outline"
         title="Vibrate"
         meta="Use phone vibration for alerts"
@@ -1283,6 +1486,7 @@ function NotificationsPanel({
         onValueChange={() => onToggle('vibrate')}
       />
       <SwitchSettingRow
+        darkMode={darkMode}
         icon="people-outline"
         title="Receive party invitations"
         meta="Allow group room and event invitations"
@@ -1294,37 +1498,45 @@ function NotificationsPanel({
 }
 
 function SettingsOption({
+  darkMode = false,
   icon,
   title,
   meta,
   onPress
 }: {
+  darkMode?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   meta: string;
   onPress: () => void;
 }) {
   return (
-    <PressableScale accessibilityRole="button" onPress={onPress} style={styles.settingsOption}>
-      <View style={styles.optionIcon}>
+    <PressableScale
+      accessibilityRole="button"
+      onPress={onPress}
+      style={[styles.settingsOption, darkMode && styles.drawerRowDark]}
+    >
+      <View style={[styles.optionIcon, darkMode && styles.optionIconDark]}>
         <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
       <View style={styles.optionTextBlock}>
-        <AppText style={styles.optionTitle}>{title}</AppText>
-        <AppText style={styles.optionMeta}>{meta}</AppText>
+        <AppText style={[styles.optionTitle, darkMode && styles.textOnDark]}>{title}</AppText>
+        <AppText style={[styles.optionMeta, darkMode && styles.drawerMutedText]}>{meta}</AppText>
       </View>
-      <Ionicons name="chevron-forward" size={17} color={colors.muted} />
+      <Ionicons name="chevron-forward" size={17} color={darkMode ? '#AEB5C2' : colors.muted} />
     </PressableScale>
   );
 }
 
 function SwitchSettingRow({
+  darkMode = false,
   icon,
   title,
   meta,
   value,
   onValueChange
 }: {
+  darkMode?: boolean;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   meta: string;
@@ -1332,18 +1544,18 @@ function SwitchSettingRow({
   onValueChange: (value: boolean) => void;
 }) {
   return (
-    <View style={styles.settingRow}>
-      <View style={styles.optionIcon}>
+    <View style={[styles.settingRow, darkMode && styles.drawerRowDark]}>
+      <View style={[styles.optionIcon, darkMode && styles.optionIconDark]}>
         <Ionicons name={icon} size={18} color={colors.accent} />
       </View>
       <View style={styles.settingTextBlock}>
-        <AppText style={styles.settingTitle}>{title}</AppText>
-        <AppText style={styles.settingMeta}>{meta}</AppText>
+        <AppText style={[styles.settingTitle, darkMode && styles.textOnDark]}>{title}</AppText>
+        <AppText style={[styles.settingMeta, darkMode && styles.drawerMutedText]}>{meta}</AppText>
       </View>
       <Switch
         value={value}
         onValueChange={onValueChange}
-        trackColor={{ false: colors.line, true: colors.accentSoft }}
+        trackColor={{ false: darkMode ? '#2A2E38' : colors.line, true: colors.accentSoft }}
         thumbColor={value ? colors.accent : colors.surface}
       />
     </View>
@@ -1398,18 +1610,129 @@ function WebPhotoPicker({
   );
 }
 
-function PostCard({ post }: { post: ProfilePost }) {
+function PostOptionsModal({
+  post,
+  darkMode,
+  onClose,
+  onEdit,
+  onDelete
+}: {
+  post: ProfilePost | null;
+  darkMode: boolean;
+  onClose: () => void;
+  onEdit: (post: ProfilePost) => void;
+  onDelete: (post: ProfilePost) => void;
+}) {
   return (
-    <View style={styles.postCard}>
+    <Modal transparent visible={Boolean(post)} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.postOptionsOverlay}>
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.postOptionsBackdrop} />
+        {post ? (
+          <View style={[styles.postOptionsSheet, darkMode && styles.postOptionsSheetDark]}>
+            <View style={styles.postOptionsHandle} />
+            <AppText style={[styles.postOptionsTitle, darkMode && styles.textOnDark]}>Post options</AppText>
+            <PressableScale
+              accessibilityRole="button"
+              onPress={() => onEdit(post)}
+              style={[styles.postOptionButton, darkMode && styles.drawerRowDark]}
+            >
+              <Ionicons name="create-outline" size={20} color={darkMode ? colors.onAccent : colors.ink} />
+              <AppText style={[styles.postOptionText, darkMode && styles.textOnDark]}>Edit</AppText>
+            </PressableScale>
+            <PressableScale
+              accessibilityRole="button"
+              onPress={() => onDelete(post)}
+              style={[styles.postOptionButton, styles.postDeleteOption]}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              <AppText style={styles.postDeleteText}>Delete post</AppText>
+            </PressableScale>
+          </View>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function EditPostModal({
+  post,
+  darkMode,
+  text,
+  onTextChange,
+  onClose,
+  onSave
+}: {
+  post: ProfilePost | null;
+  darkMode: boolean;
+  text: string;
+  onTextChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const canSave = Boolean(post) && text.trim() !== post?.body.trim();
+
+  return (
+    <Modal transparent visible={Boolean(post)} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.postOptionsOverlay}>
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.postOptionsBackdrop} />
+        {post ? (
+          <View style={[styles.editPostSheet, darkMode && styles.postOptionsSheetDark]}>
+            <View style={styles.editPostHeader}>
+              <AppText style={[styles.postOptionsTitle, darkMode && styles.textOnDark]}>Edit post</AppText>
+              <PressableScale
+                accessibilityRole="button"
+                onPress={onClose}
+                style={[styles.editPostClose, darkMode && styles.profileIconBadgeDark]}
+              >
+                <Ionicons name="close-outline" size={22} color={darkMode ? colors.onAccent : colors.ink} />
+              </PressableScale>
+            </View>
+            <TextInput
+              value={text}
+              onChangeText={onTextChange}
+              placeholder="What's on your mind?"
+              placeholderTextColor={colors.muted}
+              multiline
+              maxLength={1000}
+              style={[styles.editPostInput, darkMode && styles.settingsInputDark, webTextInputNoOutlineStyle]}
+            />
+            <PressableScale
+              accessibilityRole="button"
+              disabled={!canSave}
+              onPress={onSave}
+              style={[styles.editPostSaveButton, !canSave && styles.editPostSaveButtonDisabled]}
+            >
+              <AppText style={[styles.editPostSaveText, !canSave && styles.editPostSaveTextDisabled]}>
+                Save edit
+              </AppText>
+            </PressableScale>
+          </View>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function PostCard({
+  post,
+  darkMode,
+  onOpenOptions
+}: {
+  post: ProfilePost;
+  darkMode: boolean;
+  onOpenOptions: (post: ProfilePost) => void;
+}) {
+  return (
+    <View style={[styles.postCard, darkMode && styles.cardDark]}>
       <View style={styles.postHeader}>
         <View style={styles.postAvatar}>
           <Ionicons name="person" size={16} color={colors.onAccent} />
         </View>
         <View style={styles.postAuthorBlock}>
-          <AppText style={styles.postAuthor}>{post.authorNickname}</AppText>
+          <AppText style={[styles.postAuthor, darkMode && styles.textOnDark]}>{post.authorNickname}</AppText>
           <AppText style={styles.postTime}>{post.createdAt.toLocaleDateString()}</AppText>
         </View>
-        <View style={styles.postVisibilityBadge}>
+        <View style={[styles.postVisibilityBadge, darkMode && styles.softSurfaceDark]}>
           <Ionicons
             name={post.visibility === 'public' ? 'earth-outline' : 'lock-closed-outline'}
             size={13}
@@ -1421,15 +1744,8 @@ function PostCard({ post }: { post: ProfilePost }) {
         </View>
         <PressableScale
           accessibilityRole="button"
-          onPress={() =>
-            Alert.alert(
-              post.visibility === 'public' ? 'Public post' : 'Private post',
-              post.visibility === 'public'
-                ? 'This post is visible on the member profile.'
-                : 'This post is private to this account.'
-            )
-          }
-          style={styles.postMenu}
+          onPress={() => onOpenOptions(post)}
+          style={[styles.postMenu, darkMode && styles.softSurfaceDark]}
         >
           <Ionicons name="ellipsis-horizontal" size={18} color={colors.muted} />
         </PressableScale>
@@ -1439,7 +1755,7 @@ function PostCard({ post }: { post: ProfilePost }) {
           <AppText style={styles.postEmojiText}>{post.emoji}</AppText>
         </View>
       ) : null}
-      {post.body ? <AppText style={styles.postBody}>{post.body}</AppText> : null}
+      {post.body ? <AppText style={[styles.postBody, darkMode && styles.textOnDark]}>{post.body}</AppText> : null}
       {post.photoUrl ? <Image source={{ uri: post.photoUrl }} style={styles.postImage} /> : null}
       {post.voiceUrl ? <VoiceAttachment voiceUrl={post.voiceUrl} label="Voice message" /> : null}
       {post.musicUrl ? <MusicAttachment musicUrl={post.musicUrl} musicTitle={post.musicTitle} /> : null}
@@ -1455,6 +1771,19 @@ const styles = StyleSheet.create({
   },
   rootDark: {
     backgroundColor: '#121418'
+  },
+  textOnDark: {
+    color: colors.onAccent
+  },
+  mutedOnDark: {
+    color: '#BBC1CC'
+  },
+  cardDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#171A22'
+  },
+  softSurfaceDark: {
+    backgroundColor: '#222735'
   },
   content: {
     padding: 16,
@@ -1478,6 +1807,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
+  },
+  profileIconBadgeDark: {
+    backgroundColor: '#222735'
   },
   settingsOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1533,6 +1865,9 @@ const styles = StyleSheet.create({
   },
   drawerMutedText: {
     color: '#BBC1CC'
+  },
+  drawerRowDark: {
+    backgroundColor: '#222735'
   },
   backPanelButton: {
     width: 34,
@@ -1616,6 +1951,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.accentSoft
   },
+  optionIconDark: {
+    backgroundColor: '#1F3552'
+  },
   optionTextBlock: {
     flex: 1
   },
@@ -1637,6 +1975,10 @@ const styles = StyleSheet.create({
     color: colors.ink,
     backgroundColor: colors.surfaceMuted,
     fontWeight: '800'
+  },
+  settingsInputDark: {
+    color: colors.onAccent,
+    backgroundColor: '#222735'
   },
   settingsTextArea: {
     minHeight: 88,
@@ -1666,11 +2008,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    position: 'relative',
     backgroundColor: colors.accentSoft
+  },
+  avatarPickerHint: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  avatarCircleDark: {
+    backgroundColor: '#1F3552'
   },
   avatarPreviewImage: {
     width: '100%',
     height: '100%'
+  },
+  avatarPreviewOverlay: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+    backgroundColor: colors.accent
   },
   logoutButton: {
     minHeight: 48,
@@ -1745,7 +2111,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    position: 'relative',
     backgroundColor: colors.accentSoft
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 3,
+    bottom: 3,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
+    backgroundColor: colors.accent
+  },
+  changePhotoButton: {
+    alignSelf: 'flex-start',
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.accentSoft
+  },
+  changePhotoText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '900'
   },
   avatarImage: {
     width: '100%',
@@ -1787,6 +2182,9 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     backgroundColor: colors.accentSoft
+  },
+  publicNoteDark: {
+    backgroundColor: '#17283D'
   },
   publicNoteText: {
     flex: 1,
@@ -1852,6 +2250,108 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 12,
     fontWeight: '800'
+  },
+  postOptionsOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end'
+  },
+  postOptionsBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(16, 17, 20, 0.38)'
+  },
+  postOptionsSheet: {
+    gap: 10,
+    padding: 16,
+    paddingBottom: 24,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: colors.surface
+  },
+  postOptionsSheetDark: {
+    backgroundColor: '#171A22'
+  },
+  postOptionsHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.line,
+    marginBottom: 2
+  },
+  postOptionsTitle: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '900'
+  },
+  postOptionButton: {
+    minHeight: 52,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surfaceMuted
+  },
+  postOptionText: {
+    fontSize: 14,
+    fontWeight: '900'
+  },
+  postDeleteOption: {
+    backgroundColor: colors.dangerSoft
+  },
+  postDeleteText: {
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: '900'
+  },
+  editPostSheet: {
+    gap: 12,
+    padding: 16,
+    paddingBottom: 24,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: colors.surface
+  },
+  editPostHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  editPostClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  editPostInput: {
+    minHeight: 120,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.ink,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlignVertical: 'top',
+    backgroundColor: colors.surfaceMuted
+  },
+  editPostSaveButton: {
+    minHeight: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  editPostSaveButtonDisabled: {
+    backgroundColor: colors.surfaceMuted
+  },
+  editPostSaveText: {
+    color: colors.onAccent,
+    fontWeight: '900'
+  },
+  editPostSaveTextDisabled: {
+    color: colors.muted
   },
   previewImage: {
     width: '100%',

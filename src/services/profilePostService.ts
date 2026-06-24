@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   getFirestore,
   onSnapshot,
   orderBy,
@@ -15,7 +16,7 @@ import { getConfiguredFirebaseApp } from './firebaseAuthService';
 
 const USER_PROFILE_COLLECTION = 'userProfiles';
 const PROFILE_POST_COLLECTION = 'profilePosts';
-const localPosts: ProfilePost[] = [];
+const PROFILE_POST_STORAGE_KEY = 'katalk.profilePosts.v1';
 
 type CreateProfilePostOptions = {
   photoUrl?: string;
@@ -25,6 +26,116 @@ type CreateProfilePostOptions = {
   musicTitle?: string;
   visibility?: ProfilePost['visibility'];
 };
+
+type StoredProfilePost = Omit<ProfilePost, 'createdAt'> & {
+  createdAtMs: number;
+};
+
+function getBrowserStorage() {
+  try {
+    if (typeof globalThis === 'undefined' || !('localStorage' in globalThis)) {
+      return null;
+    }
+
+    return globalThis.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function isStoredProfilePost(value: unknown): value is StoredProfilePost {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const post = value as Partial<StoredProfilePost>;
+
+  return Boolean(
+    post.id &&
+      post.profileId &&
+      post.authorNickname &&
+      typeof post.body === 'string' &&
+      (post.visibility === 'public' || post.visibility === 'private') &&
+      typeof post.createdAtMs === 'number'
+  );
+}
+
+function loadStoredPosts() {
+  const storage = getBrowserStorage();
+
+  if (!storage) {
+    return [];
+  }
+
+  try {
+    const rawPosts = storage.getItem(PROFILE_POST_STORAGE_KEY);
+
+    if (!rawPosts) {
+      return [];
+    }
+
+    const parsedPosts = JSON.parse(rawPosts);
+
+    if (!Array.isArray(parsedPosts)) {
+      return [];
+    }
+
+    return parsedPosts.filter(isStoredProfilePost).map((post) => ({
+      ...post,
+      createdAt: new Date(post.createdAtMs)
+    }));
+  } catch {
+    return [];
+  }
+}
+
+const localPosts: ProfilePost[] = loadStoredPosts();
+
+function saveStoredPosts() {
+  const storage = getBrowserStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  try {
+    const storablePosts: StoredProfilePost[] = localPosts.slice(0, 200).map((post) => ({
+      ...post,
+      createdAtMs: post.createdAt.getTime()
+    }));
+
+    storage.setItem(PROFILE_POST_STORAGE_KEY, JSON.stringify(storablePosts));
+  } catch {
+    // Posts still remain visible in memory if browser storage is unavailable.
+  }
+}
+
+function upsertLocalPost(post: ProfilePost) {
+  const existingIndex = localPosts.findIndex((item) => item.id === post.id);
+
+  if (existingIndex >= 0) {
+    localPosts[existingIndex] = post;
+  } else {
+    localPosts.unshift(post);
+  }
+
+  localPosts.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  saveStoredPosts();
+}
+
+function mergeStoredPostsIntoMemory() {
+  loadStoredPosts().forEach((post) => {
+    const existingIndex = localPosts.findIndex((item) => item.id === post.id);
+
+    if (existingIndex >= 0) {
+      localPosts[existingIndex] = post;
+    } else {
+      localPosts.push(post);
+    }
+  });
+
+  localPosts.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+}
 
 function getPostDb() {
   const app = getConfiguredFirebaseApp();
@@ -43,6 +154,12 @@ function profilePostsCollection() {
 
 function visibleLocalPostsFor(profileId: string) {
   return localPosts.filter((post) => post.visibility === 'public' || post.profileId === profileId);
+}
+
+export function loadVisibleProfilePosts(profileId: string) {
+  mergeStoredPostsIntoMemory();
+  return visibleLocalPostsFor(profileId)
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
 }
 
 function postFromSnapshot(id: string, data: Record<string, unknown>): ProfilePost {
@@ -82,13 +199,15 @@ export function subscribeProfilePosts(
   onPosts: (posts: ProfilePost[]) => void,
   onError: (message: string) => void
 ) {
+  mergeStoredPostsIntoMemory();
+  onPosts(
+    visibleLocalPostsFor(profileId)
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+  );
+
   const postsCollection = profilePostsCollection();
 
   if (!postsCollection) {
-    onPosts(
-      visibleLocalPostsFor(profileId)
-        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
-    );
     return (() => undefined) as Unsubscribe;
   }
 
@@ -98,6 +217,9 @@ export function subscribeProfilePosts(
       const remotePosts = snapshot.docs
         .map((item) => postFromSnapshot(item.id, item.data()))
         .filter((post) => post.visibility === 'public' || post.profileId === profileId);
+
+      remotePosts.forEach(upsertLocalPost);
+
       const remotePostIds = new Set(remotePosts.map((post) => post.id));
       const localOnlyPosts = visibleLocalPostsFor(profileId).filter((post) => !remotePostIds.has(post.id));
 
@@ -107,7 +229,13 @@ export function subscribeProfilePosts(
         )
       );
     },
-    (error) => onError(postErrorMessage(error))
+    (error) => {
+      onPosts(
+        visibleLocalPostsFor(profileId)
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      );
+      onError(postErrorMessage(error));
+    }
   );
 }
 
@@ -159,7 +287,7 @@ export async function createProfilePost(
   };
   const postsCollection = profilePostsCollection();
 
-  localPosts.unshift(localPost);
+  upsertLocalPost(localPost);
 
   if (!postsCollection) {
     return localPost;
@@ -183,6 +311,53 @@ export async function createProfilePost(
   }
 
   return localPost;
+}
+
+export function updateProfilePostBody(postId: string, body: string) {
+  const cleanBody = body.trim();
+  const existingIndex = localPosts.findIndex((post) => post.id === postId);
+
+  if (existingIndex < 0) {
+    throw new Error('Post was not found.');
+  }
+
+  const updatedPost = {
+    ...localPosts[existingIndex],
+    body: cleanBody
+  };
+
+  localPosts[existingIndex] = updatedPost;
+  saveStoredPosts();
+
+  const db = getPostDb();
+
+  if (db) {
+    void setDoc(
+      doc(db, PROFILE_POST_COLLECTION, postId),
+      {
+        body: cleanBody,
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    ).catch(() => undefined);
+  }
+
+  return updatedPost;
+}
+
+export function deleteProfilePost(postId: string) {
+  const existingIndex = localPosts.findIndex((post) => post.id === postId);
+
+  if (existingIndex >= 0) {
+    localPosts.splice(existingIndex, 1);
+    saveStoredPosts();
+  }
+
+  const db = getPostDb();
+
+  if (db) {
+    void deleteDoc(doc(db, PROFILE_POST_COLLECTION, postId)).catch(() => undefined);
+  }
 }
 
 export async function uploadProfilePostPhoto(profileId: string, file: Blob) {

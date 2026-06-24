@@ -11,9 +11,10 @@ import type { Candidate, UserProfile } from '../types';
 
 type Props = {
   profile: UserProfile;
+  darkMode?: boolean;
 };
 
-export function VideoNearbyScreen({ profile }: Props) {
+export function VideoNearbyScreen({ profile, darkMode = false }: Props) {
   const [inVideo, setInVideo] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [microphoneMuted, setMicrophoneMuted] = useState(true);
@@ -99,19 +100,19 @@ export function VideoNearbyScreen({ profile }: Props) {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
-          <AppText style={styles.screenTitle}>Nearby you</AppText>
+          <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>Nearby you</AppText>
           <Ionicons name="ellipsis-horizontal" size={24} color={colors.muted} />
         </View>
 
-        <View style={styles.videoPanel}>
+        <View style={[styles.videoPanel, darkMode && styles.cardDark]}>
           <View style={styles.videoText}>
-            <AppText style={styles.videoTitle}>
+            <AppText style={[styles.videoTitle, darkMode && styles.textOnDark]}>
               {inVideo && activeCandidate ? 'Video match active' : 'Optional video match'}
             </AppText>
-            <AppText style={styles.videoCopy}>
+            <AppText style={[styles.videoCopy, darkMode && styles.mutedOnDark]}>
               {inVideo && activeCandidate
                 ? 'Camera starts off. You control reveal, mute, report, and leave.'
                 : 'Start a one-to-one video match without opening chat.'}
@@ -155,7 +156,7 @@ export function VideoNearbyScreen({ profile }: Props) {
 
         <View style={styles.memberGrid}>
           {nearbyMembers.map((member) => (
-            <View key={member.id} style={styles.memberTile}>
+            <View key={member.id} style={[styles.memberTile, darkMode && styles.cardDark]}>
               <ImageBackground
                 source={{ uri: member.photoUrl }}
                 imageStyle={styles.memberImage}
@@ -185,20 +186,20 @@ export function VideoNearbyScreen({ profile }: Props) {
                 <AppText style={styles.photoLocation}>Los Angeles, CA</AppText>
               </ImageBackground>
               <View style={styles.memberCaption}>
-                <AppText style={styles.memberName}>{member.nickname}, {member.age}</AppText>
+                <AppText style={[styles.memberName, darkMode && styles.textOnDark]}>{member.nickname}, {member.age}</AppText>
                 <PressableScale
                   accessibilityRole="button"
                   onPress={() => Alert.alert('Profile preview', member.prompt)}
-                  style={styles.profileButton}
+                  style={[styles.profileButton, darkMode && styles.softSurfaceDark]}
                 >
-                  <Ionicons name="person-outline" size={16} color={colors.ink} />
+                  <Ionicons name="person-outline" size={16} color={darkMode ? colors.onAccent : colors.ink} />
                 </PressableScale>
               </View>
             </View>
           ))}
         </View>
 
-        <View style={styles.noChatCard}>
+        <View style={[styles.noChatCard, darkMode && styles.softSurfaceDark]}>
           <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.muted} />
           <AppText style={styles.noChatText}>
             This tab intentionally has no chat, intro messages, or chat requests.
@@ -213,6 +214,22 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.surface
+  },
+  rootDark: {
+    backgroundColor: '#101217'
+  },
+  textOnDark: {
+    color: colors.onAccent
+  },
+  mutedOnDark: {
+    color: '#BBC1CC'
+  },
+  cardDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#171A22'
+  },
+  softSurfaceDark: {
+    backgroundColor: '#222735'
   },
   content: {
     padding: 16,

@@ -1,6 +1,7 @@
-import type { UserProfile } from '../types';
+import type { ThemeMode, UserProfile } from '../types';
 
 const PROFILE_STORAGE_KEY = 'katalk.profile.v1';
+const THEME_MODE_STORAGE_KEY = 'katalk.themeMode.v1';
 
 function getBrowserStorage() {
   try {
@@ -81,5 +82,33 @@ export function clearStoredProfile() {
     storage.removeItem(PROFILE_STORAGE_KEY);
   } catch {
     // Ignore storage cleanup failures.
+  }
+}
+
+export function loadStoredThemeMode(): ThemeMode {
+  const storage = getBrowserStorage();
+
+  if (!storage) {
+    return 'light';
+  }
+
+  try {
+    return storage.getItem(THEME_MODE_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+export function saveStoredThemeMode(themeMode: ThemeMode) {
+  const storage = getBrowserStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  try {
+    storage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+  } catch {
+    // Ignore theme persistence failures; the in-memory setting still works.
   }
 }

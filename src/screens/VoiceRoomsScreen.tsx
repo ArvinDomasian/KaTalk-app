@@ -11,9 +11,10 @@ import type { UserProfile, VoiceRoom } from '../types';
 
 type Props = {
   profile: UserProfile;
+  darkMode?: boolean;
 };
 
-export function VoiceRoomsScreen({ profile }: Props) {
+export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
   const [muted, setMuted] = useState(true);
 
@@ -49,7 +50,7 @@ export function VoiceRoomsScreen({ profile }: Props) {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
         <ImageBackground
           source={{ uri: candidates[2].photoUrl }}
@@ -88,28 +89,28 @@ export function VoiceRoomsScreen({ profile }: Props) {
           </View>
         </ImageBackground>
 
-        <View style={styles.notice}>
+        <View style={[styles.notice, darkMode && styles.cardDark]}>
           <Ionicons name="mic-outline" size={22} color={colors.accent} />
-          <AppText style={styles.noticeText}>
+          <AppText style={[styles.noticeText, darkMode && styles.textOnDark]}>
             Microphone access is requested only when joining or speaking in a room.
           </AppText>
         </View>
 
         {rooms.map((room) => (
-          <View key={room.id} style={styles.roomCard}>
+          <View key={room.id} style={[styles.roomCard, darkMode && styles.cardDark]}>
             <View style={styles.roomTop}>
               <View style={styles.moodPill}>
                 <AppText style={styles.moodText}>{room.mood}</AppText>
               </View>
               <AppText style={styles.count}>{room.participants} listening</AppText>
             </View>
-            <AppText style={styles.roomTitle}>{room.title}</AppText>
+            <AppText style={[styles.roomTitle, darkMode && styles.textOnDark]}>{room.title}</AppText>
             <AppText style={styles.host}>Hosted by {room.host}</AppText>
 
             {room.isJoined ? (
-              <View style={styles.livePanel}>
+              <View style={[styles.livePanel, darkMode && styles.softSurfaceDark]}>
                 <View style={styles.liveDot} />
-                <AppText style={styles.liveText}>You are in this room</AppText>
+                <AppText style={[styles.liveText, darkMode && styles.textOnDark]}>You are in this room</AppText>
               </View>
             ) : null}
 
@@ -140,9 +141,9 @@ export function VoiceRoomsScreen({ profile }: Props) {
           </View>
         ))}
 
-        <View style={styles.policyCard}>
-          <AppText style={styles.policyTitle}>Room safety rules</AppText>
-          <AppText style={styles.policyText}>
+        <View style={[styles.policyCard, darkMode && styles.cardDark]}>
+          <AppText style={[styles.policyTitle, darkMode && styles.textOnDark]}>Room safety rules</AppText>
+          <AppText style={[styles.policyText, darkMode && styles.mutedOnDark]}>
             Hosts can remove abusive users. Blocks apply across rooms, nearby discovery, message
             matching, and video.
           </AppText>
@@ -156,6 +157,22 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.background
+  },
+  rootDark: {
+    backgroundColor: '#101217'
+  },
+  textOnDark: {
+    color: colors.onAccent
+  },
+  mutedOnDark: {
+    color: '#BBC1CC'
+  },
+  cardDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#171A22'
+  },
+  softSurfaceDark: {
+    backgroundColor: '#222735'
   },
   content: {
     padding: 16,

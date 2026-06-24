@@ -1,5 +1,7 @@
 export type ActiveTab = 'message' | 'rooms' | 'video' | 'profile';
 
+export type ThemeMode = 'light' | 'dark';
+
 export type UserProfile = {
   id: string;
   nickname: string;

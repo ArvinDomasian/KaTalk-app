@@ -38,10 +38,11 @@ const NO_MATCH_TIMEOUT_MS = 15000;
 
 type Props = {
   profile: UserProfile;
+  darkMode?: boolean;
   onChattingStateChange?: (isChatting: boolean) => void;
 };
 
-export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
+export function MessageMatchScreen({ profile, darkMode = false, onChattingStateChange }: Props) {
   const [status, setStatus] = useState<MatchStatus>('idle');
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(MATCH_SECONDS);
@@ -513,48 +514,49 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
+      style={[styles.root, darkMode && styles.rootDark]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <MatchSearchWindow
         visible={matchWindowVisible}
         stage={matchWindowStage}
         candidate={matchWindowCandidate}
+        darkMode={darkMode}
       />
       {status === 'idle' || status === 'searching' ? (
         <ScrollView contentContainerStyle={styles.chatHome}>
           <View style={styles.topBar}>
             <View>
-              <AppText style={styles.screenTitle}>KaTalk</AppText>
+              <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>KaTalk</AppText>
             </View>
-            <PressableScale accessibilityRole="button" style={styles.roundIcon}>
-              <Ionicons name="search-outline" size={21} color={colors.ink} />
+            <PressableScale accessibilityRole="button" style={[styles.roundIcon, darkMode && styles.roundIconDark]}>
+              <Ionicons name="search-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
             </PressableScale>
           </View>
 
           <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitleSmall}>Story</AppText>
+            <AppText style={[styles.sectionTitleSmall, darkMode && styles.textOnDark]}>Story</AppText>
             <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyRow}>
             <View style={styles.storyItem}>
-              <View style={styles.addStory}>
-                <Ionicons name="add" size={24} color={colors.ink} />
+              <View style={[styles.addStory, darkMode && styles.softSurfaceDark]}>
+                <Ionicons name="add" size={24} color={darkMode ? colors.onAccent : colors.ink} />
               </View>
-              <AppText style={styles.storyName}>Add Story</AppText>
+              <AppText style={[styles.storyName, darkMode && styles.textOnDark]}>Add Story</AppText>
             </View>
             {candidates.map((item) => (
               <View key={item.id} style={styles.storyItem}>
                 <Image source={{ uri: item.photoUrl }} style={styles.storyImage} />
-                <AppText style={styles.storyName}>{item.nickname}</AppText>
+                <AppText style={[styles.storyName, darkMode && styles.textOnDark]}>{item.nickname}</AppText>
               </View>
             ))}
           </ScrollView>
 
-          <View style={styles.featureMatch}>
+          <View style={[styles.featureMatch, darkMode && styles.cardDark]}>
             <View>
-              <AppText style={styles.featureTitle}>Ready for a real match?</AppText>
-              <AppText style={styles.featureCopy}>
+              <AppText style={[styles.featureTitle, darkMode && styles.textOnDark]}>Ready for a real match?</AppText>
+              <AppText style={[styles.featureCopy, darkMode && styles.mutedOnDark]}>
                 Connect with another KaTalk member. Chat ends automatically after 2 minutes.
               </AppText>
             </View>
@@ -565,7 +567,7 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
               </View>
             ) : null}
             {searchMessage ? (
-              <View style={styles.matchStatusRow}>
+              <View style={[styles.matchStatusRow, darkMode && styles.softSurfaceDark]}>
                 {status === 'searching' ? <ActivityIndicator size="small" color={colors.accent} /> : null}
                 <AppText style={styles.matchStatusText}>{searchMessage}</AppText>
               </View>
@@ -580,15 +582,15 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
           </View>
 
           <View style={styles.sectionHeader}>
-            <AppText style={styles.sectionTitleSmall}>Chat</AppText>
+            <AppText style={[styles.sectionTitleSmall, darkMode && styles.textOnDark]}>Chat</AppText>
             <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
           </View>
           <View style={styles.chatList}>
             {candidates.map((item, index) => (
-              <View key={item.id} style={styles.chatRow}>
+              <View key={item.id} style={[styles.chatRow, darkMode && styles.chatRowDark]}>
                 <Image source={{ uri: item.photoUrl }} style={styles.chatAvatar} />
                 <View style={styles.chatPreview}>
-                  <AppText style={styles.chatName}>{item.nickname}</AppText>
+                  <AppText style={[styles.chatName, darkMode && styles.textOnDark]}>{item.nickname}</AppText>
                   <AppText style={styles.chatSnippet} numberOfLines={1}>
                     {item.prompt}
                   </AppText>
@@ -604,13 +606,13 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
           </View>
 
           {savedMatches.length > 0 ? (
-            <View style={styles.savedCard}>
-              <AppText style={styles.savedTitle}>Saved matches</AppText>
+            <View style={[styles.savedCard, darkMode && styles.cardDark]}>
+              <AppText style={[styles.savedTitle, darkMode && styles.textOnDark]}>Saved matches</AppText>
               {savedMatches.map((match) => (
                 <View key={match.id} style={styles.savedRow}>
                   <Image source={{ uri: match.candidate.photoUrl }} style={styles.savedAvatar} />
                   <View style={styles.savedInfo}>
-                    <AppText style={styles.savedName}>Anonymous saved match</AppText>
+                    <AppText style={[styles.savedName, darkMode && styles.textOnDark]}>Anonymous saved match</AppText>
                     <AppText style={styles.savedMeta}>
                       {match.candidate.interests.join(' / ')}
                     </AppText>
@@ -624,10 +626,10 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
 
       {candidate && (status === 'active' || status === 'expired' || status === 'saved') ? (
         <View style={styles.chatArea}>
-          <View style={styles.matchHeader}>
+          <View style={[styles.matchHeader, darkMode && styles.matchHeaderDark]}>
             <Image source={{ uri: candidate.photoUrl }} style={styles.avatarImage} />
             <View style={styles.matchInfo}>
-              <AppText style={styles.matchName}>Anonymous match</AppText>
+              <AppText style={[styles.matchName, darkMode && styles.textOnDark]}>Anonymous match</AppText>
               <AppText style={styles.matchMeta}>
                 {candidate.interests.join(' / ')}
               </AppText>
@@ -654,13 +656,16 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
                 key={message.id}
                 style={[
                   styles.bubble,
+                  darkMode && styles.bubbleDark,
                   message.sender === 'me' && styles.myBubble,
-                  message.sender === 'system' && styles.systemBubble
+                  message.sender === 'system' && styles.systemBubble,
+                  darkMode && message.sender === 'system' && styles.systemBubbleDark
                 ]}
               >
                 <AppText
                   style={[
                     styles.bubbleText,
+                    darkMode && message.sender !== 'me' && styles.bubbleTextDark,
                     message.sender === 'me' && styles.myBubbleText,
                     message.sender === 'system' && styles.systemText
                   ]}
@@ -672,7 +677,7 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
           </ScrollView>
 
           {status === 'active' ? (
-            <View style={styles.actionPanel}>
+            <View style={[styles.actionPanel, darkMode && styles.actionPanelDark]}>
               <View style={styles.quickActions}>
                 <PrimaryButton
                   label={savedByMe ? 'Saved' : 'Save'}
@@ -715,13 +720,13 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
                       : 'Save only works if both people choose it before time runs out.'}
                 </AppText>
               </View>
-              <View style={styles.inputRow}>
+              <View style={[styles.inputRow, darkMode && styles.inputRowDark]}>
                 <TextInput
                   value={draft}
                   onChangeText={setDraft}
                   placeholder="Send a calm message"
                   placeholderTextColor={colors.muted}
-                  style={styles.input}
+                  style={[styles.input, darkMode && styles.inputDark]}
                   multiline
                 />
                 <PressableScale accessibilityRole="button" onPress={sendMessage} style={styles.sendButton}>
@@ -730,11 +735,11 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
               </View>
             </View>
           ) : (
-            <View style={styles.endedPanel}>
-              <AppText style={styles.endedTitle}>
+            <View style={[styles.endedPanel, darkMode && styles.actionPanelDark]}>
+              <AppText style={[styles.endedTitle, darkMode && styles.textOnDark]}>
                 {status === 'saved' ? 'Saved match' : 'Chat ended'}
               </AppText>
-              <AppText style={styles.endedCopy}>
+              <AppText style={[styles.endedCopy, darkMode && styles.mutedOnDark]}>
                 {status === 'saved'
                   ? 'Both people saved before the timer ended. Returning to matching.'
                   : 'The chat closed automatically after 2 minutes. Returning to matching.'}
@@ -751,11 +756,13 @@ export function MessageMatchScreen({ profile, onChattingStateChange }: Props) {
 function MatchSearchWindow({
   visible,
   stage,
-  candidate
+  candidate,
+  darkMode
 }: {
   visible: boolean;
   stage: 'finding' | 'found' | 'none';
   candidate: Candidate | null;
+  darkMode: boolean;
 }) {
   const isFound = stage === 'found';
   const isNone = stage === 'none';
@@ -763,7 +770,7 @@ function MatchSearchWindow({
   return (
     <Modal transparent visible={visible} animationType="fade">
       <View style={styles.matchWindowOverlay}>
-        <View style={styles.matchWindowCard}>
+        <View style={[styles.matchWindowCard, darkMode && styles.cardDark]}>
           <View
             style={[
               styles.matchWindowAvatar,
@@ -781,10 +788,10 @@ function MatchSearchWindow({
               />
             )}
           </View>
-          <AppText style={styles.matchWindowTitle}>
+          <AppText style={[styles.matchWindowTitle, darkMode && styles.textOnDark]}>
             {isNone ? 'No match found try again' : isFound ? 'You find a match' : 'Finding someone'}
           </AppText>
-          <AppText style={styles.matchWindowCopy}>
+          <AppText style={[styles.matchWindowCopy, darkMode && styles.mutedOnDark]}>
             {isNone
               ? 'Nobody is available right now.'
               : isFound
@@ -802,6 +809,23 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.surface
+  },
+  rootDark: {
+    backgroundColor: '#101217'
+  },
+  textOnDark: {
+    color: colors.onAccent
+  },
+  mutedOnDark: {
+    color: '#BBC1CC'
+  },
+  cardDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#171A22'
+  },
+  softSurfaceDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#222735'
   },
   matchWindowOverlay: {
     flex: 1,
@@ -882,6 +906,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.line
+  },
+  roundIconDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#222735'
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -991,6 +1019,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.line
   },
+  chatRowDark: {
+    borderBottomColor: '#2A2E38'
+  },
   chatAvatar: {
     width: 50,
     height: 50,
@@ -1026,6 +1057,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.line
+  },
+  matchHeaderDark: {
+    borderBottomColor: '#2A2E38',
+    backgroundColor: '#171A22'
   },
   avatarImage: {
     width: 46,
@@ -1071,6 +1106,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line
   },
+  bubbleDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#171A22'
+  },
   myBubble: {
     alignSelf: 'flex-end',
     backgroundColor: colors.accent
@@ -1079,8 +1118,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     backgroundColor: colors.surfaceMuted
   },
+  systemBubbleDark: {
+    backgroundColor: '#222735'
+  },
   bubbleText: {
     color: colors.ink
+  },
+  bubbleTextDark: {
+    color: colors.onAccent
   },
   myBubbleText: {
     color: colors.onAccent
@@ -1095,6 +1140,10 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.line,
     backgroundColor: colors.surface
+  },
+  actionPanelDark: {
+    borderTopColor: '#2A2E38',
+    backgroundColor: '#171A22'
   },
   quickActions: {
     flexDirection: 'row',
@@ -1123,6 +1172,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 8
   },
+  inputRowDark: {
+    backgroundColor: '#171A22'
+  },
   input: {
     flex: 1,
     minHeight: 46,
@@ -1134,6 +1186,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: colors.background,
     color: colors.ink
+  },
+  inputDark: {
+    borderColor: '#2A2E38',
+    backgroundColor: '#222735',
+    color: colors.onAccent
   },
   sendButton: {
     width: 46,

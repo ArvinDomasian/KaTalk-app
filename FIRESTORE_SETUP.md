@@ -9,6 +9,7 @@ Live matching uses these collections:
 - `liveMessageMatches`
 - `liveMessageMatches/{matchId}/messages`
 - `liveBlocks`
+- `profilePosts`
 
 ## Enable Firestore
 
@@ -40,7 +41,9 @@ These rules require Firebase sign-in, but they are still too open for a public l
 
 ## Enable Storage for photo posts
 
-Profile photo posts use Firebase Storage on web.
+Profile wall posts use the shared Firestore `profilePosts` collection. The app also keeps a local browser copy so posts stay visible after refresh if Firebase is still blocked during development.
+
+Photo and voice attachments use Firebase Storage on web.
 
 In Firebase Console:
 

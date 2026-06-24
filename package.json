@@ -8,6 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web --offline",
+    "build:android:apk": "eas build --platform android --profile preview",
+    "build:android:aab": "eas build --platform android --profile production",
     "build:android:preview": "eas build --platform android --profile preview",
     "build:android:store": "eas build --platform android --profile production",
     "build:ios:store": "eas build --platform ios --profile production",
