@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { AppText } from '../components/AppText';
 import { PressableScale } from '../components/PressableScale';
+import { VoiceRoomStage } from '../components/VoiceRoomStage';
 import { candidates } from '../data/mockData';
 import { appServices } from '../services/localAppServices';
 import { colors } from '../theme';
@@ -17,26 +18,43 @@ type Props = {
 export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
   const [muted, setMuted] = useState(true);
+  const [handRaised, setHandRaised] = useState(false);
 
   useEffect(() => {
     void appServices.rooms.list().then(setRooms);
   }, []);
 
-  function toggleJoin(roomId: string) {
-    setRooms((current) =>
-      current.map((room) => {
-        if (room.id !== roomId) {
-          return room;
-        }
+  const activeRoom = rooms.find((room) => room.isJoined) ?? null;
 
-        const isJoining = !room.isJoined;
-        return {
-          ...room,
-          isJoined: isJoining,
-          participants: room.participants + (isJoining ? 1 : -1)
-        };
-      })
+  function joinRoom(roomId: string) {
+    setRooms((current) =>
+      current.map((room) => ({
+        ...room,
+        isJoined: room.id === roomId,
+        participants:
+          room.id === roomId
+            ? room.participants + (room.isJoined ? 0 : 1)
+            : room.participants - (room.isJoined ? 1 : 0)
+      }))
     );
+    setMuted(true);
+    setHandRaised(false);
+  }
+
+  function leaveRoom(roomId: string) {
+    setRooms((current) =>
+      current.map((room) =>
+        room.id === roomId
+          ? {
+              ...room,
+              isJoined: false,
+              participants: Math.max(0, room.participants - 1)
+            }
+          : room
+      )
+    );
+    setMuted(true);
+    setHandRaised(false);
   }
 
   function reportRoom(room: VoiceRoom) {
@@ -47,6 +65,33 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
       actorId: profile.id
     });
     Alert.alert('Report submitted', `${room.title} was sent to the moderation queue.`);
+  }
+
+  function blockHost(room: VoiceRoom) {
+    void appServices.safety.record({
+      source: 'voice_room',
+      action: 'block',
+      targetId: `${room.id}:host:${room.host}`,
+      actorId: profile.id
+    });
+    Alert.alert('Host blocked', `${room.host} will be hidden from future room interactions.`);
+  }
+
+  if (activeRoom) {
+    return (
+      <VoiceRoomStage
+        room={activeRoom}
+        profile={profile}
+        darkMode={darkMode}
+        muted={muted}
+        handRaised={handRaised}
+        onMutedChange={setMuted}
+        onHandRaisedChange={setHandRaised}
+        onLeave={() => leaveRoom(activeRoom.id)}
+        onReportRoom={() => reportRoom(activeRoom)}
+        onBlockHost={() => blockHost(activeRoom)}
+      />
+    );
   }
 
   return (
@@ -91,8 +136,9 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
 
         <View style={[styles.notice, darkMode && styles.cardDark]}>
           <Ionicons name="mic-outline" size={22} color={colors.accent} />
-          <AppText style={[styles.noticeText, darkMode && styles.textOnDark]}>
-            Microphone access is requested only when joining or speaking in a room.
+            <AppText style={[styles.noticeText, darkMode && styles.textOnDark]}>
+            Android/iOS builds join a real Agora voice channel. Browser preview shows the same
+            room controls without live audio.
           </AppText>
         </View>
 
@@ -106,6 +152,18 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
             </View>
             <AppText style={[styles.roomTitle, darkMode && styles.textOnDark]}>{room.title}</AppText>
             <AppText style={styles.host}>Hosted by {room.host}</AppText>
+            <AppText style={[styles.roomTopic, darkMode && styles.mutedOnDark]}>{room.topic}</AppText>
+
+            <View style={styles.speakerRow}>
+              {room.speakers.slice(0, 4).map((speaker, index) => (
+                <View key={`${room.id}-${speaker}`} style={[styles.speakerChip, darkMode && styles.softSurfaceDark]}>
+                  <View style={[styles.speakerDot, index === 0 && styles.hostDot]} />
+                  <AppText style={[styles.speakerText, darkMode && styles.textOnDark]}>
+                    {speaker}
+                  </AppText>
+                </View>
+              ))}
+            </View>
 
             {room.isJoined ? (
               <View style={[styles.livePanel, darkMode && styles.softSurfaceDark]}>
@@ -116,18 +174,19 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
 
             <View style={styles.controls}>
               <PrimaryButton
-                label={room.isJoined ? 'Leave' : 'Join'}
-                icon={room.isJoined ? 'exit-outline' : 'enter-outline'}
-                onPress={() => toggleJoin(room.id)}
-                variant={room.isJoined ? 'secondary' : 'primary'}
+                label="Join room"
+                icon="enter-outline"
+                onPress={() => joinRoom(room.id)}
+                variant="primary"
                 style={styles.controlButton}
               />
               <PrimaryButton
-                label={muted ? 'Muted' : 'Mute'}
-                icon={muted ? 'mic-off-outline' : 'mic-outline'}
-                onPress={() => setMuted((value) => !value)}
+                label="Preview"
+                icon="people-outline"
+                onPress={() =>
+                  Alert.alert(room.title, `${room.topic}\n\nSpeakers: ${room.speakers.join(', ')}`)
+                }
                 variant="secondary"
-                disabled={!room.isJoined}
                 style={styles.controlButton}
               />
               <PressableScale
@@ -297,6 +356,39 @@ const styles = StyleSheet.create({
   },
   host: {
     color: colors.muted
+  },
+  roomTopic: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700'
+  },
+  speakerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6
+  },
+  speakerChip: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceMuted
+  },
+  speakerDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.accent
+  },
+  hostDot: {
+    backgroundColor: '#8B6AF2'
+  },
+  speakerText: {
+    fontSize: 11,
+    fontWeight: '900'
   },
   livePanel: {
     flexDirection: 'row',

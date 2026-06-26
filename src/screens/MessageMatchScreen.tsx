@@ -42,6 +42,22 @@ type Props = {
   onChattingStateChange?: (isChatting: boolean) => void;
 };
 
+type StoryItem = {
+  id: string;
+  nickname: string;
+  photoUrl?: string;
+  text: string;
+  createdAt: Date;
+  mine?: boolean;
+};
+
+type InboxThread = {
+  id: string;
+  candidate: Candidate;
+  messages: Message[];
+  unread: boolean;
+};
+
 export function MessageMatchScreen({ profile, darkMode = false, onChattingStateChange }: Props) {
   const [status, setStatus] = useState<MatchStatus>('idle');
   const [candidate, setCandidate] = useState<Candidate | null>(null);
@@ -58,6 +74,42 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
   const [matchWindowVisible, setMatchWindowVisible] = useState(false);
   const [matchWindowStage, setMatchWindowStage] = useState<'finding' | 'found' | 'none'>('finding');
   const [matchWindowCandidate, setMatchWindowCandidate] = useState<Candidate | null>(null);
+  const [stories, setStories] = useState<StoryItem[]>(() =>
+    candidates.map((item, index) => ({
+      id: `story-${item.id}`,
+      nickname: item.nickname,
+      photoUrl: item.photoUrl,
+      text:
+        index === 0
+          ? 'Coffee walk later. Keeping it calm today.'
+          : index === 1
+            ? 'Current mood: books, rain, and easy conversation.'
+            : index === 2
+              ? 'One small song has been stuck in my head all day.'
+              : 'Looking for a quiet weekend plan.',
+      createdAt: new Date(Date.now() - (index + 1) * 1000 * 60 * 18)
+    }))
+  );
+  const [storyComposerVisible, setStoryComposerVisible] = useState(false);
+  const [storyDraft, setStoryDraft] = useState('');
+  const [activeStory, setActiveStory] = useState<StoryItem | null>(null);
+  const [inboxThreads, setInboxThreads] = useState<InboxThread[]>(() =>
+    candidates.map((item, index) => ({
+      id: `thread-${item.id}`,
+      candidate: item,
+      unread: index === 2,
+      messages: [
+        {
+          id: `thread-${item.id}-opener`,
+          sender: 'match',
+          body: item.prompt,
+          sentAt: new Date(Date.now() - (index + 1) * 1000 * 60 * 42)
+        }
+      ]
+    }))
+  );
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [inboxDraft, setInboxDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const matchCompleteRef = useRef(false);
   const returnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,6 +201,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     inputRange: [-1, 0, 1],
     outputRange: ['-2deg', '0deg', '2deg']
   });
+  const activeThread = inboxThreads.find((thread) => thread.id === activeThreadId) ?? null;
 
   function clearLiveSubscriptions() {
     liveQueueUnsubscribeRef.current?.();
@@ -512,6 +565,66 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     );
   }
 
+  function publishStory() {
+    const text = storyDraft.trim();
+
+    if (!text) {
+      Alert.alert('Story is empty', 'Write a short story first.');
+      return;
+    }
+
+    const nextStory: StoryItem = {
+      id: `story-${profile.id}-${Date.now()}`,
+      nickname: profile.nickname,
+      photoUrl: profile.avatarUrl,
+      text,
+      createdAt: new Date(),
+      mine: true
+    };
+
+    setStories((current) => [nextStory, ...current]);
+    setStoryDraft('');
+    setStoryComposerVisible(false);
+    setActiveStory(nextStory);
+  }
+
+  function openInboxThread(threadId: string) {
+    setActiveThreadId(threadId);
+    setInboxDraft('');
+    setInboxThreads((current) =>
+      current.map((thread) => (thread.id === threadId ? { ...thread, unread: false } : thread))
+    );
+  }
+
+  function sendInboxMessage() {
+    const text = inboxDraft.trim();
+    const targetThreadId = activeThreadId;
+
+    if (!text || !targetThreadId) {
+      return;
+    }
+
+    setInboxThreads((current) =>
+      current.map((thread) =>
+        thread.id === targetThreadId
+          ? {
+              ...thread,
+              messages: [
+                ...thread.messages,
+                {
+                  id: `thread-${targetThreadId}-me-${Date.now()}`,
+                  sender: 'me',
+                  body: text,
+                  sentAt: new Date()
+                }
+              ]
+            }
+          : thread
+      )
+    );
+    setInboxDraft('');
+  }
+
   return (
     <KeyboardAvoidingView
       style={[styles.root, darkMode && styles.rootDark]}
@@ -522,6 +635,30 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
         stage={matchWindowStage}
         candidate={matchWindowCandidate}
         darkMode={darkMode}
+      />
+      <StoryComposerModal
+        visible={storyComposerVisible}
+        value={storyDraft}
+        darkMode={darkMode}
+        onChange={setStoryDraft}
+        onClose={() => setStoryComposerVisible(false)}
+        onPublish={publishStory}
+      />
+      <StoryViewerModal
+        story={activeStory}
+        darkMode={darkMode}
+        onClose={() => setActiveStory(null)}
+      />
+      <InboxThreadModal
+        thread={activeThread}
+        draft={inboxDraft}
+        darkMode={darkMode}
+        onDraftChange={setInboxDraft}
+        onSend={sendInboxMessage}
+        onClose={() => {
+          setActiveThreadId(null);
+          setInboxDraft('');
+        }}
       />
       {status === 'idle' || status === 'searching' ? (
         <ScrollView contentContainerStyle={styles.chatHome}>
@@ -539,17 +676,34 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
             <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyRow}>
-            <View style={styles.storyItem}>
+            <PressableScale
+              accessibilityRole="button"
+              onPress={() => setStoryComposerVisible(true)}
+              style={styles.storyItem}
+            >
               <View style={[styles.addStory, darkMode && styles.softSurfaceDark]}>
                 <Ionicons name="add" size={24} color={darkMode ? colors.onAccent : colors.ink} />
               </View>
               <AppText style={[styles.storyName, darkMode && styles.textOnDark]}>Add Story</AppText>
-            </View>
-            {candidates.map((item) => (
-              <View key={item.id} style={styles.storyItem}>
-                <Image source={{ uri: item.photoUrl }} style={styles.storyImage} />
-                <AppText style={[styles.storyName, darkMode && styles.textOnDark]}>{item.nickname}</AppText>
-              </View>
+            </PressableScale>
+            {stories.map((item) => (
+              <PressableScale
+                key={item.id}
+                accessibilityRole="button"
+                onPress={() => setActiveStory(item)}
+                style={styles.storyItem}
+              >
+                {item.photoUrl ? (
+                  <Image source={{ uri: item.photoUrl }} style={[styles.storyImage, item.mine && styles.myStoryImage]} />
+                ) : (
+                  <View style={[styles.storyImageFallback, item.mine && styles.myStoryImage]}>
+                    <Ionicons name="person" size={22} color={colors.onAccent} />
+                  </View>
+                )}
+                <AppText style={[styles.storyName, darkMode && styles.textOnDark]} numberOfLines={1}>
+                  {item.mine ? 'Your story' : item.nickname}
+                </AppText>
+              </PressableScale>
             ))}
           </ScrollView>
 
@@ -586,22 +740,33 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
             <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
           </View>
           <View style={styles.chatList}>
-            {candidates.map((item, index) => (
-              <View key={item.id} style={[styles.chatRow, darkMode && styles.chatRowDark]}>
-                <Image source={{ uri: item.photoUrl }} style={styles.chatAvatar} />
+            {inboxThreads.map((thread, index) => (
+              <PressableScale
+                key={thread.id}
+                accessibilityRole="button"
+                onPress={() => openInboxThread(thread.id)}
+                style={[styles.chatRow, darkMode && styles.chatRowDark]}
+              >
+                <Image source={{ uri: thread.candidate.photoUrl }} style={styles.chatAvatar} />
                 <View style={styles.chatPreview}>
-                  <AppText style={[styles.chatName, darkMode && styles.textOnDark]}>{item.nickname}</AppText>
+                  <AppText style={[styles.chatName, darkMode && styles.textOnDark]}>
+                    {thread.candidate.nickname}
+                  </AppText>
                   <AppText style={styles.chatSnippet} numberOfLines={1}>
-                    {item.prompt}
+                    {thread.messages[thread.messages.length - 1]?.body ?? thread.candidate.prompt}
                   </AppText>
                 </View>
                 <View style={styles.chatMeta}>
                   <AppText style={styles.chatTime}>
                     {index === 0 ? '11:43 am' : index === 1 ? '09:21 am' : 'Yesterday'}
                   </AppText>
-                  {index < 2 ? <Ionicons name="checkmark-done" size={16} color={colors.accent} /> : null}
+                  {thread.unread ? (
+                    <View style={styles.unreadDot} />
+                  ) : index < 2 ? (
+                    <Ionicons name="checkmark-done" size={16} color={colors.accent} />
+                  ) : null}
                 </View>
-              </View>
+              </PressableScale>
             ))}
           </View>
 
@@ -805,6 +970,183 @@ function MatchSearchWindow({
   );
 }
 
+function StoryComposerModal({
+  visible,
+  value,
+  darkMode,
+  onChange,
+  onClose,
+  onPublish
+}: {
+  visible: boolean;
+  value: string;
+  darkMode: boolean;
+  onChange: (value: string) => void;
+  onClose: () => void;
+  onPublish: () => void;
+}) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.socialModalOverlay}>
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.socialModalBackdrop} />
+        <View style={[styles.storyComposerCard, darkMode && styles.cardDark]}>
+          <View style={styles.socialModalHeader}>
+            <AppText style={[styles.socialModalTitle, darkMode && styles.textOnDark]}>Create story</AppText>
+            <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
+              <Ionicons name="close-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+            </PressableScale>
+          </View>
+          <TextInput
+            value={value}
+            onChangeText={onChange}
+            placeholder="Share a quick mood, plan, or thought"
+            placeholderTextColor={colors.muted}
+            multiline
+            maxLength={180}
+            style={[styles.storyInput, darkMode && styles.storyInputDark]}
+          />
+          <View style={styles.storyComposerFooter}>
+            <AppText style={styles.storyCount}>{value.length}/180</AppText>
+            <PrimaryButton
+              label="Post story"
+              icon="sparkles-outline"
+              disabled={!value.trim()}
+              onPress={onPublish}
+              style={styles.storyPublishButton}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function StoryViewerModal({
+  story,
+  darkMode,
+  onClose
+}: {
+  story: StoryItem | null;
+  darkMode: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <Modal transparent visible={Boolean(story)} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.socialModalOverlay}>
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.socialModalBackdrop} />
+        {story ? (
+          <View style={[styles.storyViewerCard, darkMode && styles.cardDark]}>
+            <View style={styles.storyViewerTop}>
+              {story.photoUrl ? (
+                <Image source={{ uri: story.photoUrl }} style={styles.storyViewerAvatar} />
+              ) : (
+                <View style={styles.storyViewerAvatarFallback}>
+                  <Ionicons name="person" size={23} color={colors.onAccent} />
+                </View>
+              )}
+              <View style={styles.storyViewerCopy}>
+                <AppText style={[styles.storyViewerName, darkMode && styles.textOnDark]}>{story.nickname}</AppText>
+                <AppText style={styles.storyViewerTime}>
+                  {story.mine ? 'Just now' : story.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </AppText>
+              </View>
+              <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
+                <Ionicons name="close-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+              </PressableScale>
+            </View>
+            <View style={styles.storyTextPanel}>
+              <AppText style={styles.storyViewerText}>{story.text}</AppText>
+            </View>
+          </View>
+        ) : null}
+      </View>
+    </Modal>
+  );
+}
+
+function InboxThreadModal({
+  thread,
+  draft,
+  darkMode,
+  onDraftChange,
+  onSend,
+  onClose
+}: {
+  thread: InboxThread | null;
+  draft: string;
+  darkMode: boolean;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal transparent visible={Boolean(thread)} animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.inboxModalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.socialModalBackdrop} />
+        {thread ? (
+          <View style={[styles.inboxSheet, darkMode && styles.cardDark]}>
+            <View style={styles.inboxHeader}>
+              <Image source={{ uri: thread.candidate.photoUrl }} style={styles.inboxAvatar} />
+              <View style={styles.inboxTitleBlock}>
+                <AppText style={[styles.inboxName, darkMode && styles.textOnDark]}>{thread.candidate.nickname}</AppText>
+                <AppText style={styles.inboxMeta}>Saved-message preview</AppText>
+              </View>
+              <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
+                <Ionicons name="close-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+              </PressableScale>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.inboxMessages}>
+              {thread.messages.map((message) => (
+                <View
+                  key={message.id}
+                  style={[
+                    styles.inboxBubble,
+                    darkMode && styles.bubbleDark,
+                    message.sender === 'me' && styles.inboxBubbleMine
+                  ]}
+                >
+                  <AppText
+                    style={[
+                      styles.inboxBubbleText,
+                      darkMode && message.sender !== 'me' && styles.bubbleTextDark,
+                      message.sender === 'me' && styles.myBubbleText
+                    ]}
+                  >
+                    {message.body}
+                  </AppText>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={[styles.inboxInputRow, darkMode && styles.inputRowDark]}>
+              <TextInput
+                value={draft}
+                onChangeText={onDraftChange}
+                placeholder="Write a message"
+                placeholderTextColor={colors.muted}
+                multiline
+                style={[styles.inboxInput, darkMode && styles.inputDark]}
+              />
+              <PressableScale
+                accessibilityRole="button"
+                disabled={!draft.trim()}
+                onPress={onSend}
+                style={[styles.inboxSendButton, !draft.trim() && styles.inboxSendButtonDisabled]}
+              >
+                <Ionicons name="send" size={19} color={colors.onAccent} />
+              </PressableScale>
+            </View>
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -947,6 +1289,19 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.accent
   },
+  myStoryImage: {
+    borderColor: '#8B6AF2'
+  },
+  storyImageFallback: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
   storyName: {
     fontSize: 11,
     fontWeight: '700',
@@ -1045,6 +1400,12 @@ const styles = StyleSheet.create({
   chatTime: {
     color: colors.muted,
     fontSize: 11
+  },
+  unreadDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: colors.accent
   },
   chatArea: {
     flex: 1
@@ -1248,5 +1609,219 @@ const styles = StyleSheet.create({
   savedMeta: {
     color: colors.muted,
     fontSize: 12
+  },
+  socialModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18
+  },
+  socialModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(16, 17, 20, 0.42)'
+  },
+  storyComposerCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    gap: 12,
+    borderRadius: 22,
+    padding: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line
+  },
+  socialModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  socialModalTitle: {
+    fontSize: 19,
+    fontWeight: '900'
+  },
+  socialCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  storyInput: {
+    minHeight: 130,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.ink,
+    backgroundColor: colors.surfaceMuted,
+    textAlignVertical: 'top',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700'
+  },
+  storyInputDark: {
+    color: colors.onAccent,
+    backgroundColor: '#222735'
+  },
+  storyComposerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10
+  },
+  storyCount: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  storyPublishButton: {
+    minWidth: 132
+  },
+  storyViewerCard: {
+    width: '100%',
+    maxWidth: 390,
+    minHeight: 360,
+    alignSelf: 'center',
+    gap: 16,
+    borderRadius: 26,
+    padding: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line
+  },
+  storyViewerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  storyViewerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22
+  },
+  storyViewerAvatarFallback: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  storyViewerCopy: {
+    flex: 1
+  },
+  storyViewerName: {
+    fontWeight: '900'
+  },
+  storyViewerTime: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  storyTextPanel: {
+    flex: 1,
+    minHeight: 230,
+    borderRadius: 22,
+    padding: 18,
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  storyViewerText: {
+    color: colors.onAccent,
+    fontSize: 25,
+    lineHeight: 32,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  inboxModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end'
+  },
+  inboxSheet: {
+    maxHeight: '82%',
+    minHeight: 420,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 14,
+    gap: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line
+  },
+  inboxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  inboxAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22
+  },
+  inboxTitleBlock: {
+    flex: 1
+  },
+  inboxName: {
+    fontSize: 16,
+    fontWeight: '900'
+  },
+  inboxMeta: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  inboxMessages: {
+    flexGrow: 1,
+    paddingVertical: 10,
+    gap: 8
+  },
+  inboxBubble: {
+    maxWidth: '86%',
+    alignSelf: 'flex-start',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: colors.surfaceMuted
+  },
+  inboxBubbleMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.accent
+  },
+  inboxBubbleText: {
+    color: colors.ink,
+    fontWeight: '700'
+  },
+  inboxInputRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.line
+  },
+  inboxInput: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 92,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: colors.ink,
+    backgroundColor: colors.surfaceMuted
+  },
+  inboxSendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  inboxSendButtonDisabled: {
+    opacity: 0.45
   }
 });

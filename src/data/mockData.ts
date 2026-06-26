@@ -49,33 +49,41 @@ export const rooms: VoiceRoom[] = [
     id: 'chill',
     title: 'Quiet Table',
     mood: 'Chill',
+    topic: 'Easy introductions, soft voices, and no pressure to speak.',
     participants: 12,
     isJoined: false,
-    host: 'Mina'
+    host: 'Mina',
+    speakers: ['Mina', 'Noa']
   },
   {
     id: 'shy',
     title: 'Shy Starters',
     mood: 'Shy',
+    topic: 'A room for short answers, gentle prompts, and patient pauses.',
     participants: 8,
     isJoined: false,
-    host: 'Arlo'
+    host: 'Arlo',
+    speakers: ['Arlo']
   },
   {
     id: 'serious',
     title: 'Real Questions',
     mood: 'Serious',
+    topic: 'Intentional dating questions without rushing into private chats.',
     participants: 18,
     isJoined: false,
-    host: 'June'
+    host: 'June',
+    speakers: ['June', 'Mara', 'Eli']
   },
   {
     id: 'local',
     title: 'Nearby Voices',
     mood: 'Local',
+    topic: 'Local plans, weekend ideas, and low-key hangout energy.',
     participants: 21,
     isJoined: false,
-    host: 'Kai'
+    host: 'Kai',
+    speakers: ['Kai', 'Sana']
   }
 ];
 

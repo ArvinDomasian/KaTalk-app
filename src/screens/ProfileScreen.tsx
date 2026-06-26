@@ -15,6 +15,12 @@ import {
   uploadProfilePostPhoto,
   uploadProfileVoiceClip
 } from '../services/profilePostService';
+import {
+  purchaseSubscriptionPlan,
+  refreshSubscription,
+  restoreSubscription,
+  type SubscriptionSnapshot
+} from '../services/subscriptionService';
 import { colors } from '../theme';
 import type { ProfilePost, UserProfile } from '../types';
 
@@ -80,7 +86,7 @@ export function ProfileScreen({
   const [editingPost, setEditingPost] = useState<ProfilePost | null>(null);
   const [editingPostText, setEditingPostText] = useState('');
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const [settingsPanel, setSettingsPanel] = useState<'main' | 'edit' | 'avatar' | 'notifications'>('main');
+  const [settingsPanel, setSettingsPanel] = useState<'main' | 'edit' | 'avatar' | 'notifications' | 'subscription'>('main');
   const [logoutConfirmVisible, setLogoutConfirmVisible] = useState(false);
   const [editName, setEditName] = useState(profile.nickname);
   const [editBirthday, setEditBirthday] = useState(profile.dateOfBirth);
@@ -94,6 +100,8 @@ export function ProfileScreen({
     vibrate: true,
     partyInvites: true
   });
+  const [subscription, setSubscription] = useState<SubscriptionSnapshot | null>(null);
+  const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const settingsProgress = useRef(new Animated.Value(0)).current;
   const settingsTranslateX = settingsProgress.interpolate({
     inputRange: [0, 1],
@@ -119,6 +127,33 @@ export function ProfileScreen({
     setEditInterests(profile.interests.join(', '));
     setAvatarDraftUrl(profile.avatarUrl ?? '');
   }, [profile]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSubscription() {
+      const snapshot = await refreshSubscription(profile.id);
+
+      if (!isMounted) {
+        return;
+      }
+
+      setSubscription(snapshot);
+
+      if (JSON.stringify(profile.subscription) !== JSON.stringify(snapshot.access)) {
+        onProfileUpdate({
+          ...profile,
+          subscription: snapshot.access
+        });
+      }
+    }
+
+    void loadSubscription();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [profile.id]);
 
   useEffect(() => () => {
     stopVoiceStream();
@@ -321,6 +356,61 @@ export function ProfileScreen({
       ...current,
       [key]: !current[key]
     }));
+  }
+
+  function applySubscriptionSnapshot(snapshot: SubscriptionSnapshot) {
+    setSubscription(snapshot);
+    onProfileUpdate({
+      ...profile,
+      subscription: snapshot.access
+    });
+  }
+
+  async function handleSubscriptionRefresh() {
+    setSubscriptionBusy(true);
+    setSettingsStatus('Checking your subscription...');
+
+    const snapshot = await refreshSubscription(profile.id);
+
+    applySubscriptionSnapshot(snapshot);
+    setSettingsStatus(snapshot.setupMessage ?? snapshot.statusText);
+    setSubscriptionBusy(false);
+  }
+
+  async function handleSubscriptionPurchase(packageId: string) {
+    setSubscriptionBusy(true);
+    setSettingsStatus('Opening secure store checkout...');
+
+    try {
+      const snapshot = await purchaseSubscriptionPlan(profile.id, packageId);
+
+      applySubscriptionSnapshot(snapshot);
+      setSettingsStatus(snapshot.isPremium ? 'KaTalk Plus is active.' : snapshot.statusText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Purchase could not be completed.';
+      setSettingsStatus(message);
+      Alert.alert('Subscription', message);
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
+
+  async function handleSubscriptionRestore() {
+    setSubscriptionBusy(true);
+    setSettingsStatus('Restoring purchases...');
+
+    try {
+      const snapshot = await restoreSubscription(profile.id);
+
+      applySubscriptionSnapshot(snapshot);
+      setSettingsStatus(snapshot.isPremium ? 'Purchase restored. KaTalk Plus is active.' : 'No active subscription was found for this store account.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Restore could not be completed.';
+      setSettingsStatus(message);
+      Alert.alert('Restore subscription', message);
+    } finally {
+      setSubscriptionBusy(false);
+    }
   }
 
   function openPostComposer() {
@@ -563,6 +653,36 @@ export function ProfileScreen({
           </View>
         </View>
 
+        <PressableScale
+          accessibilityRole="button"
+          onPress={() => {
+            setSettingsPanel('subscription');
+            setSettingsStatus(null);
+            setSettingsVisible(true);
+            Animated.timing(settingsProgress, {
+              toValue: 1,
+              duration: 260,
+              useNativeDriver: true
+            }).start();
+          }}
+          style={[styles.subscriptionBanner, darkMode && styles.subscriptionBannerDark]}
+        >
+          <View style={styles.subscriptionIconBubble}>
+            <Ionicons name="sparkles-outline" size={20} color={colors.onAccent} />
+          </View>
+          <View style={styles.subscriptionBannerCopy}>
+            <AppText style={[styles.subscriptionBannerTitle, darkMode && styles.textOnDark]}>
+              {subscription?.isPremium || profile.subscription?.isActive ? 'KaTalk Plus active' : 'Upgrade to KaTalk Plus'}
+            </AppText>
+            <AppText style={[styles.subscriptionBannerMeta, darkMode && styles.mutedOnDark]}>
+              {subscription?.isPremium || profile.subscription?.isActive
+                ? 'Your premium access is connected to this account.'
+                : 'Real App Store and Google Play subscriptions with restore support.'}
+            </AppText>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={darkMode ? colors.onAccent : colors.ink} />
+        </PressableScale>
+
         <View style={[styles.publicNote, darkMode && styles.publicNoteDark]}>
           <Ionicons name="earth-outline" size={18} color={colors.accent} />
           <AppText style={[styles.publicNoteText, darkMode && styles.textOnDark]}>
@@ -676,7 +796,9 @@ export function ProfileScreen({
                     ? 'Edit Profile'
                     : settingsPanel === 'avatar'
                       ? 'Avatar'
-                      : 'Notifications'}
+                      : settingsPanel === 'notifications'
+                        ? 'Notifications'
+                        : 'KaTalk Plus'}
               </AppText>
               <PressableScale
                 accessibilityRole="button"
@@ -699,6 +821,7 @@ export function ProfileScreen({
                 onOpenEdit={() => setSettingsPanel('edit')}
                 onOpenAvatar={() => setSettingsPanel('avatar')}
                 onOpenNotifications={() => setSettingsPanel('notifications')}
+                onOpenSubscription={() => setSettingsPanel('subscription')}
                 logoutConfirmVisible={logoutConfirmVisible}
                 onStartLogout={() => setLogoutConfirmVisible(true)}
                 onCancelLogout={() => setLogoutConfirmVisible(false)}
@@ -731,6 +854,16 @@ export function ProfileScreen({
                 darkMode={darkMode}
                 notifications={notifications}
                 onToggle={toggleNotification}
+              />
+            ) : null}
+            {settingsPanel === 'subscription' ? (
+              <SubscriptionPanel
+                darkMode={darkMode}
+                snapshot={subscription}
+                busy={subscriptionBusy}
+                onRefresh={handleSubscriptionRefresh}
+                onRestore={handleSubscriptionRestore}
+                onPurchase={handleSubscriptionPurchase}
               />
             ) : null}
           </Animated.View>
@@ -1163,6 +1296,7 @@ function SettingsMainPanel({
   onOpenEdit,
   onOpenAvatar,
   onOpenNotifications,
+  onOpenSubscription,
   logoutConfirmVisible,
   onStartLogout,
   onCancelLogout,
@@ -1174,6 +1308,7 @@ function SettingsMainPanel({
   onOpenEdit: () => void;
   onOpenAvatar: () => void;
   onOpenNotifications: () => void;
+  onOpenSubscription: () => void;
   logoutConfirmVisible: boolean;
   onStartLogout: () => void;
   onCancelLogout: () => void;
@@ -1224,6 +1359,13 @@ function SettingsMainPanel({
 
       <View style={styles.settingsSection}>
         <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Account</AppText>
+        <SettingsOption
+          darkMode={darkMode}
+          icon="sparkles-outline"
+          title="KaTalk Plus"
+          meta={profile.subscription?.isActive ? 'Premium subscription active' : 'Upgrade, restore, or refresh subscription'}
+          onPress={onOpenSubscription}
+        />
         <View style={[styles.settingRow, darkMode && styles.drawerRowDark]}>
           <View style={styles.settingTextBlock}>
             <AppText style={[styles.settingTitle, darkMode && styles.textOnDark]}>Signed in as</AppText>
@@ -1257,6 +1399,192 @@ function SettingsMainPanel({
         </PressableScale>
       )}
     </ScrollView>
+  );
+}
+
+function SubscriptionPanel({
+  darkMode,
+  snapshot,
+  busy,
+  onRefresh,
+  onRestore,
+  onPurchase
+}: {
+  darkMode: boolean;
+  snapshot: SubscriptionSnapshot | null;
+  busy: boolean;
+  onRefresh: () => void;
+  onRestore: () => void;
+  onPurchase: (packageId: string) => void;
+}) {
+  const isPremium = Boolean(snapshot?.isPremium);
+  const setupMessage = snapshot?.setupMessage;
+  const plans = snapshot?.plans ?? [];
+
+  function openManagementLink() {
+    if (!snapshot?.managementUrl) {
+      return;
+    }
+
+    void Linking.openURL(snapshot.managementUrl);
+  }
+
+  return (
+    <ScrollView
+      style={styles.settingsPanelScroller}
+      contentContainerStyle={styles.settingsPanelContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={[styles.plusHero, darkMode && styles.plusHeroDark]}>
+        <View style={styles.plusHeroTop}>
+          <View style={styles.plusHeroIcon}>
+            <Ionicons name="sparkles-outline" size={22} color={colors.onAccent} />
+          </View>
+          <View style={styles.plusHeroCopy}>
+            <AppText style={[styles.plusTitle, darkMode && styles.textOnDark]}>KaTalk Plus</AppText>
+            <AppText style={[styles.plusMeta, darkMode && styles.mutedOnDark]}>
+              {isPremium ? 'Premium access is active on this account.' : 'Upgrade with real App Store or Google Play billing.'}
+            </AppText>
+          </View>
+        </View>
+
+        <View style={styles.plusFeatureList}>
+          <PlusFeature darkMode={darkMode} icon="flash-outline" text="More daily message-match starts" />
+          <PlusFeature darkMode={darkMode} icon="mic-outline" text="Priority access for busy voice rooms" />
+          <PlusFeature darkMode={darkMode} icon="videocam-outline" text="Extra video discovery chances" />
+          <PlusFeature darkMode={darkMode} icon="shield-checkmark-outline" text="Premium badge and stronger safety visibility" />
+        </View>
+      </View>
+
+      <View style={styles.settingsSection}>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Status</AppText>
+        <View style={[styles.settingRow, darkMode && styles.drawerRowDark]}>
+          <View style={styles.settingTextBlock}>
+            <AppText style={[styles.settingTitle, darkMode && styles.textOnDark]}>
+              {snapshot?.statusText ?? 'Checking subscription'}
+            </AppText>
+            <AppText style={[styles.settingMeta, darkMode && styles.drawerMutedText]}>
+              Entitlement: {snapshot?.entitlementId ?? 'katalk_plus'}
+            </AppText>
+          </View>
+          <Ionicons
+            name={isPremium ? 'checkmark-circle' : 'ellipse-outline'}
+            size={22}
+            color={isPremium ? colors.success : colors.muted}
+          />
+        </View>
+      </View>
+
+      {setupMessage ? (
+        <View style={[styles.subscriptionSetupBox, darkMode && styles.drawerRowDark]}>
+          <Ionicons name="information-circle-outline" size={19} color={colors.accent} />
+          <AppText style={[styles.subscriptionSetupText, darkMode && styles.drawerMutedText]}>
+            {setupMessage}
+          </AppText>
+        </View>
+      ) : null}
+
+      <View style={styles.settingsSection}>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Plans</AppText>
+        {plans.length > 0 ? (
+          plans.map((plan) => (
+            <View key={plan.packageId} style={[styles.planCard, darkMode && styles.drawerRowDark]}>
+              <View style={styles.planTopRow}>
+                <View style={styles.planTitleBlock}>
+                  <View style={styles.planTitleRow}>
+                    <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>{plan.title}</AppText>
+                    {plan.isRecommended ? (
+                      <View style={styles.recommendedBadge}>
+                        <AppText style={styles.recommendedText}>Best value</AppText>
+                      </View>
+                    ) : null}
+                  </View>
+                  <AppText style={[styles.planMeta, darkMode && styles.drawerMutedText]}>
+                    {plan.period} - {plan.productId}
+                  </AppText>
+                </View>
+                <AppText style={[styles.planPrice, darkMode && styles.textOnDark]}>{plan.price}</AppText>
+              </View>
+              <AppText style={[styles.planDescription, darkMode && styles.drawerMutedText]}>
+                {plan.description}
+              </AppText>
+              <PressableScale
+                accessibilityRole="button"
+                disabled={busy || !snapshot?.isStorePurchaseAvailable}
+                onPress={() => onPurchase(plan.packageId)}
+                style={[
+                  styles.planBuyButton,
+                  (busy || !snapshot?.isStorePurchaseAvailable) && styles.planBuyButtonDisabled
+                ]}
+              >
+                <AppText
+                  style={[
+                    styles.planBuyText,
+                    (busy || !snapshot?.isStorePurchaseAvailable) && styles.planBuyTextDisabled
+                  ]}
+                >
+                  {busy ? 'Please wait...' : `Subscribe ${plan.price}`}
+                </AppText>
+              </PressableScale>
+            </View>
+          ))
+        ) : (
+          <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
+            <Ionicons name="storefront-outline" size={24} color={colors.muted} />
+            <AppText style={styles.emptyText}>No store plans loaded yet.</AppText>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.subscriptionActions}>
+        <PressableScale
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={onRestore}
+          style={[styles.subscriptionActionButton, darkMode && styles.drawerRowDark]}
+        >
+          <Ionicons name="refresh-outline" size={17} color={colors.accent} />
+          <AppText style={styles.subscriptionActionText}>Restore</AppText>
+        </PressableScale>
+        <PressableScale
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={onRefresh}
+          style={[styles.subscriptionActionButton, darkMode && styles.drawerRowDark]}
+        >
+          <Ionicons name="sync-outline" size={17} color={colors.accent} />
+          <AppText style={styles.subscriptionActionText}>Refresh</AppText>
+        </PressableScale>
+      </View>
+
+      {snapshot?.managementUrl ? (
+        <PressableScale
+          accessibilityRole="button"
+          onPress={openManagementLink}
+          style={[styles.manageSubscriptionButton, darkMode && styles.drawerRowDark]}
+        >
+          <Ionicons name="open-outline" size={17} color={colors.accent} />
+          <AppText style={styles.subscriptionActionText}>Manage subscription</AppText>
+        </PressableScale>
+      ) : null}
+    </ScrollView>
+  );
+}
+
+function PlusFeature({
+  darkMode,
+  icon,
+  text
+}: {
+  darkMode: boolean;
+  icon: keyof typeof Ionicons.glyphMap;
+  text: string;
+}) {
+  return (
+    <View style={styles.plusFeature}>
+      <Ionicons name={icon} size={15} color={colors.accent} />
+      <AppText style={[styles.plusFeatureText, darkMode && styles.mutedOnDark]}>{text}</AppText>
+    </View>
   );
 }
 
@@ -1984,6 +2312,180 @@ const styles = StyleSheet.create({
     minHeight: 88,
     textAlignVertical: 'top'
   },
+  plusHero: {
+    gap: 12,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#D8CEF9',
+    backgroundColor: '#F5F1FF'
+  },
+  plusHeroDark: {
+    borderColor: '#3D315F',
+    backgroundColor: '#201C2E'
+  },
+  plusHeroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  plusHeroIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  plusHeroCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  plusTitle: {
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '900'
+  },
+  plusMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  plusFeatureList: {
+    gap: 7
+  },
+  plusFeature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7
+  },
+  plusFeatureText: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
+  },
+  subscriptionSetupBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 10,
+    borderRadius: 14,
+    backgroundColor: colors.accentSoft
+  },
+  subscriptionSetupText: {
+    flex: 1,
+    color: colors.ink,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
+  },
+  planCard: {
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceMuted
+  },
+  planTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10
+  },
+  planTitleBlock: {
+    flex: 1,
+    minWidth: 0
+  },
+  planTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6
+  },
+  planTitle: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  recommendedBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    backgroundColor: '#8B6AF2'
+  },
+  recommendedText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '900'
+  },
+  planMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '700'
+  },
+  planPrice: {
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '900',
+    textAlign: 'right'
+  },
+  planDescription: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  planBuyButton: {
+    minHeight: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  planBuyButtonDisabled: {
+    backgroundColor: colors.line
+  },
+  planBuyText: {
+    color: colors.onAccent,
+    fontSize: 13,
+    fontWeight: '900'
+  },
+  planBuyTextDisabled: {
+    color: colors.muted
+  },
+  subscriptionActions: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  subscriptionActionButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 21,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceMuted
+  },
+  manageSubscriptionButton: {
+    minHeight: 42,
+    borderRadius: 21,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceMuted
+  },
+  subscriptionActionText: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
   suggestionWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2157,6 +2659,45 @@ const styles = StyleSheet.create({
   },
   profileMeta: {
     color: colors.muted,
+    fontWeight: '700'
+  },
+  subscriptionBanner: {
+    minHeight: 72,
+    borderRadius: 18,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#D8CEF9',
+    backgroundColor: '#F5F1FF'
+  },
+  subscriptionBannerDark: {
+    borderColor: '#3D315F',
+    backgroundColor: '#201C2E'
+  },
+  subscriptionIconBubble: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8B6AF2'
+  },
+  subscriptionBannerCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  subscriptionBannerTitle: {
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '900'
+  },
+  subscriptionBannerMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700'
   },
   interestRow: {

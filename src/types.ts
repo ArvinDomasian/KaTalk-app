@@ -17,6 +17,17 @@ export type UserProfile = {
   acceptedTerms: boolean;
   acceptedPrivacy: boolean;
   acceptedRules: boolean;
+  subscription?: SubscriptionAccess;
+};
+
+export type SubscriptionAccess = {
+  tier: 'free' | 'plus';
+  isActive: boolean;
+  entitlementId: string;
+  productId?: string;
+  store?: string;
+  expiresAt?: string | null;
+  updatedAt: string;
 };
 
 export type MatchStatus = 'idle' | 'searching' | 'active' | 'expired' | 'saved';
@@ -43,9 +54,11 @@ export type VoiceRoom = {
   id: string;
   title: string;
   mood: string;
+  topic: string;
   participants: number;
   isJoined: boolean;
   host: string;
+  speakers: string[];
 };
 
 export type ProfilePost = {

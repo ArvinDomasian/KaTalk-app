@@ -1,4 +1,5 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
+import Constants from 'expo-constants';
 import {
   createUserWithEmailAndPassword,
   getAuth,
@@ -38,24 +39,48 @@ function cleanEnvValue(value?: string) {
   return value?.trim().replace(/,$/, '').replace(/^["']|["']$/g, '');
 }
 
-const firebaseConfig = {
-  apiKey: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_API_KEY),
-  authDomain: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN),
-  projectId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID),
-  storageBucket: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET),
-  messagingSenderId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID),
-  appId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_APP_ID)
+type FirebasePublicConfig = {
+  apiKey?: string;
+  authDomain?: string;
+  projectId?: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId?: string;
 };
 
-const requiredFirebaseKeys = [
-  ['EXPO_PUBLIC_FIREBASE_API_KEY', firebaseConfig.apiKey],
-  ['EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN', firebaseConfig.authDomain],
-  ['EXPO_PUBLIC_FIREBASE_PROJECT_ID', firebaseConfig.projectId],
-  ['EXPO_PUBLIC_FIREBASE_APP_ID', firebaseConfig.appId]
-] as const;
+function getExtraFirebaseConfig(): FirebasePublicConfig {
+  const extra = Constants.expoConfig?.extra ?? Constants.manifest2?.extra ?? {};
+  const firebase = (extra as { firebase?: FirebasePublicConfig }).firebase;
+
+  return firebase ?? {};
+}
+
+function getFirebaseConfig(): FirebasePublicConfig {
+  const extraConfig = getExtraFirebaseConfig();
+
+  return {
+    apiKey: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_API_KEY) || cleanEnvValue(extraConfig.apiKey),
+    authDomain: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN) || cleanEnvValue(extraConfig.authDomain),
+    projectId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID) || cleanEnvValue(extraConfig.projectId),
+    storageBucket: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET) || cleanEnvValue(extraConfig.storageBucket),
+    messagingSenderId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID) || cleanEnvValue(extraConfig.messagingSenderId),
+    appId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_APP_ID) || cleanEnvValue(extraConfig.appId)
+  };
+}
+
+function getRequiredFirebaseKeys() {
+  const firebaseConfig = getFirebaseConfig();
+
+  return [
+    ['EXPO_PUBLIC_FIREBASE_API_KEY', firebaseConfig.apiKey],
+    ['EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN', firebaseConfig.authDomain],
+    ['EXPO_PUBLIC_FIREBASE_PROJECT_ID', firebaseConfig.projectId],
+    ['EXPO_PUBLIC_FIREBASE_APP_ID', firebaseConfig.appId]
+  ] as const;
+}
 
 function getMissingFirebaseKeys() {
-  return requiredFirebaseKeys.filter(([, value]) => !value).map(([key]) => key);
+  return getRequiredFirebaseKeys().filter(([, value]) => !value).map(([key]) => key);
 }
 
 export function isFirebaseEmailVerificationConfigured() {
@@ -66,6 +91,8 @@ export function getConfiguredFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseEmailVerificationConfigured()) {
     return null;
   }
+
+  const firebaseConfig = getFirebaseConfig();
 
   return getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 }

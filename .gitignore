@@ -1,5 +1,7 @@
 node_modules
 .expo
+.npm-cache
+.expo-home
 .codex-run
 .env
 dist
