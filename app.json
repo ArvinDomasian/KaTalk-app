@@ -25,7 +25,12 @@
         "CAMERA",
         "RECORD_AUDIO",
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "plugins": [
@@ -44,6 +49,12 @@
         }
       ],
       "expo-audio"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1f8fb0a3-2f7a-4d1b-a0a6-d228fdceeec5"
+      }
+    },
+    "owner": "vinc3yy"
   }
 }

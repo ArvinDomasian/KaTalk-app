@@ -1,83 +1,236 @@
-import React, { useEffect, useState } from 'react';
-import { Alert, ImageBackground, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ImageBackground,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
+import { VideoCallStage } from '../components/VideoCallStage';
 import { appServices } from '../services/localAppServices';
-import type { VideoSession } from '../services/contracts';
+import {
+  getAgoraSetupError,
+  leaveLiveVideoMatch,
+  recordLiveVideoSafety,
+  startLiveVideoMatching,
+  subscribeLiveVideoMatchState,
+  type LiveVideoSession
+} from '../services/firebaseVideoMatchService';
 import { colors } from '../theme';
 import type { Candidate, UserProfile } from '../types';
 
 type Props = {
   profile: UserProfile;
   darkMode?: boolean;
+  onCallStateChange?: (active: boolean) => void;
 };
 
-export function VideoNearbyScreen({ profile, darkMode = false }: Props) {
-  const [inVideo, setInVideo] = useState(false);
-  const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [microphoneMuted, setMicrophoneMuted] = useState(true);
-  const [activeCandidate, setActiveCandidate] = useState<Candidate | null>(null);
+type VideoState = 'idle' | 'searching' | 'matched' | 'calling';
+
+export function VideoNearbyScreen({
+  profile,
+  darkMode = false,
+  onCallStateChange
+}: Props) {
+  const [videoState, setVideoState] = useState<VideoState>('idle');
+  const [searchMessage, setSearchMessage] = useState('Looking for someone compatible');
+  const [activeSession, setActiveSession] = useState<LiveVideoSession | null>(null);
   const [nearbyMembers, setNearbyMembers] = useState<Candidate[]>([]);
+  const cancelSearchRef = useRef<(() => void) | null>(null);
+  const matchedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFinishingRef = useRef(false);
 
   useEffect(() => {
     void refreshNearby();
   }, [profile]);
+
+  useEffect(() => {
+    onCallStateChange?.(videoState !== 'idle');
+  }, [onCallStateChange, videoState]);
+
+  useEffect(() => {
+    if (!activeSession || videoState === 'idle') {
+      return;
+    }
+
+    return subscribeLiveVideoMatchState(
+      activeSession.id,
+      (state) => {
+        if (state.status === 'active' || isFinishingRef.current) {
+          return;
+        }
+
+        isFinishingRef.current = true;
+        resetVideoState();
+        Alert.alert(
+          state.status === 'blocked' ? 'Call ended' : 'The other person left',
+          state.status === 'blocked'
+            ? 'This video match is no longer available.'
+            : 'You can find another video match whenever you are ready.'
+        );
+      },
+      (message) => {
+        Alert.alert('Call status unavailable', message);
+      }
+    );
+  }, [activeSession, videoState]);
+
+  useEffect(() => {
+    return () => {
+      cancelSearchRef.current?.();
+
+      if (matchedTimerRef.current) {
+        clearTimeout(matchedTimerRef.current);
+      }
+
+      onCallStateChange?.(false);
+    };
+  }, [onCallStateChange]);
 
   async function refreshNearby() {
     const members = await appServices.nearby.list(profile);
     setNearbyMembers(members);
   }
 
-  async function startVideo() {
-    let session: VideoSession;
+  function resetVideoState() {
+    cancelSearchRef.current?.();
+    cancelSearchRef.current = null;
 
-    try {
-      session = await appServices.video.start(profile);
-    } catch {
-      Alert.alert('No video matches available', 'There are no visible video matches right now.');
+    if (matchedTimerRef.current) {
+      clearTimeout(matchedTimerRef.current);
+      matchedTimerRef.current = null;
+    }
+
+    setActiveSession(null);
+    setVideoState('idle');
+    setSearchMessage('Looking for someone compatible');
+  }
+
+  function startVideo() {
+    if (Platform.OS === 'web') {
+      Alert.alert(
+        'Use the installed mobile app',
+        'Real camera-to-camera calling uses Agora and runs in the Android or iOS build, not the browser preview.'
+      );
       return;
     }
 
-    setActiveCandidate(session.candidate);
-    setInVideo(true);
-    setCameraEnabled(session.cameraStartsEnabled);
-    setMicrophoneMuted(session.microphoneStartsMuted);
+    const setupError = getAgoraSetupError();
+
+    if (setupError) {
+      Alert.alert('Video calling needs setup', setupError);
+      return;
+    }
+
+    isFinishingRef.current = false;
+    cancelSearchRef.current?.();
+    setVideoState('searching');
+    setSearchMessage('Looking for someone compatible');
+
+    cancelSearchRef.current = startLiveVideoMatching(profile, {
+      onSearching: setSearchMessage,
+      onMatched: (session) => {
+        cancelSearchRef.current = null;
+        setActiveSession(session);
+        setVideoState('matched');
+        matchedTimerRef.current = setTimeout(() => {
+          setVideoState('calling');
+        }, 1200);
+      },
+      onError: (message) => {
+        resetVideoState();
+        Alert.alert('Video match unavailable', message);
+      }
+    });
   }
 
-  function endVideo() {
-    setInVideo(false);
-    setActiveCandidate(null);
-    setCameraEnabled(false);
-    setMicrophoneMuted(true);
+  function cancelSearch() {
+    isFinishingRef.current = false;
+    resetVideoState();
+  }
+
+  async function endVideo(notifyMatch = true) {
+    if (isFinishingRef.current) {
+      return;
+    }
+
+    isFinishingRef.current = true;
+    const matchId = activeSession?.id;
+
+    resetVideoState();
+
+    if (notifyMatch && matchId) {
+      await leaveLiveVideoMatch(matchId);
+    }
   }
 
   function reportVideo() {
-    if (activeCandidate) {
-      void appServices.safety.record({
-        source: 'video',
-        action: 'report',
-        targetId: activeCandidate.id,
-        actorId: profile.id
-      });
+    if (!activeSession) {
+      return;
     }
-    Alert.alert('Report submitted', 'This video session was sent to moderation.');
-    endVideo();
+
+    Alert.alert(
+      'Report this video match?',
+      'The call will end and the report will be sent for moderation.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: () => {
+            const matchId = activeSession.id;
+            isFinishingRef.current = true;
+            resetVideoState();
+            void recordLiveVideoSafety(matchId, 'report').then(() => {
+              Alert.alert('Report submitted', 'This video session was sent to moderation.');
+            });
+          }
+        }
+      ]
+    );
   }
 
   function blockVideo() {
-    if (activeCandidate) {
-      void appServices.safety.record({
-        source: 'video',
-        action: 'block',
-        targetId: activeCandidate.id,
-        actorId: profile.id
-      });
+    if (!activeSession) {
+      return;
     }
-    Alert.alert('Member blocked', 'This member will not appear for you again.');
-    void refreshNearby();
-    endVideo();
+
+    Alert.alert(
+      `Block ${activeSession.candidate.nickname}?`,
+      'The call will end and you will not be matched with this person again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: () => {
+            const matchId = activeSession.id;
+            isFinishingRef.current = true;
+            resetVideoState();
+            void recordLiveVideoSafety(matchId, 'block').then(() => {
+              void refreshNearby();
+              Alert.alert('Member blocked', 'This member will no longer appear for you.');
+            });
+          }
+        }
+      ]
+    );
+  }
+
+  function handleCallError(message: string) {
+    Alert.alert('Video call problem', message, [
+      {
+        text: 'Close call',
+        onPress: () => void endVideo()
+      }
+    ]);
   }
 
   function handleNearbySafety(action: 'report' | 'block', member: Candidate) {
@@ -99,6 +252,71 @@ export function VideoNearbyScreen({ profile, darkMode = false }: Props) {
     }
   }
 
+  if (videoState === 'calling' && activeSession) {
+    return (
+      <VideoCallStage
+        session={activeSession}
+        profile={profile}
+        darkMode={darkMode}
+        onLeave={() => void endVideo()}
+        onReport={reportVideo}
+        onBlock={blockVideo}
+        onFatalError={handleCallError}
+      />
+    );
+  }
+
+  if (videoState === 'searching') {
+    return (
+      <View style={[styles.matchingRoot, darkMode && styles.rootDark]}>
+        <View style={styles.searchPulseOuter}>
+          <View style={styles.searchPulseMiddle}>
+            <View style={styles.searchPulseInner}>
+              <Ionicons name="videocam" size={42} color={colors.onAccent} />
+            </View>
+          </View>
+        </View>
+        <ActivityIndicator size="large" color={colors.accent} />
+        <AppText style={[styles.matchingTitle, darkMode && styles.textOnDark]}>
+          Finding someone
+        </AppText>
+        <AppText style={[styles.matchingCopy, darkMode && styles.mutedOnDark]}>
+          {searchMessage}
+        </AppText>
+        <PrimaryButton
+          label="Cancel"
+          icon="close-outline"
+          variant="secondary"
+          onPress={cancelSearch}
+          style={styles.cancelButton}
+        />
+      </View>
+    );
+  }
+
+  if (videoState === 'matched' && activeSession) {
+    return (
+      <View style={[styles.matchingRoot, darkMode && styles.rootDark]}>
+        <View style={styles.matchedAvatarFrame}>
+          <Image source={{ uri: activeSession.candidate.photoUrl }} style={styles.matchedAvatar} />
+          <View style={styles.matchedBadge}>
+            <Ionicons name="checkmark" size={20} color={colors.onAccent} />
+          </View>
+        </View>
+        <AppText style={[styles.matchingTitle, darkMode && styles.textOnDark]}>
+          You found a match
+        </AppText>
+        <AppText style={[styles.matchedName, darkMode && styles.textOnDark]}>
+          {activeSession.candidate.nickname}, {activeSession.candidate.age}
+        </AppText>
+        <AppText style={[styles.matchingCopy, darkMode && styles.mutedOnDark]}>
+          Connecting your private video call. Your camera starts off.
+        </AppText>
+        <ActivityIndicator size="small" color={colors.accent} />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -108,50 +326,37 @@ export function VideoNearbyScreen({ profile, darkMode = false }: Props) {
         </View>
 
         <View style={[styles.videoPanel, darkMode && styles.cardDark]}>
-          <View style={styles.videoText}>
-            <AppText style={[styles.videoTitle, darkMode && styles.textOnDark]}>
-              {inVideo && activeCandidate ? 'Video match active' : 'Optional video match'}
-            </AppText>
-            <AppText style={[styles.videoCopy, darkMode && styles.mutedOnDark]}>
-              {inVideo && activeCandidate
-                ? 'Camera starts off. You control reveal, mute, report, and leave.'
-                : 'Start a one-to-one video match without opening chat.'}
-            </AppText>
-          </View>
-
-          {inVideo ? (
-            <View style={styles.videoControls}>
-              <PrimaryButton
-                label={cameraEnabled ? 'Camera On' : 'Camera Off'}
-                icon={cameraEnabled ? 'videocam-outline' : 'videocam-off-outline'}
-                variant="secondary"
-                onPress={() => setCameraEnabled((value) => !value)}
-                style={styles.videoControl}
-              />
-              <PrimaryButton
-                label={microphoneMuted ? 'Muted' : 'Mic On'}
-                icon={microphoneMuted ? 'mic-off-outline' : 'mic-outline'}
-                variant="secondary"
-                onPress={() => setMicrophoneMuted((value) => !value)}
-                style={styles.videoControl}
-              />
-              <PrimaryButton
-                label="Leave"
-                icon="exit-outline"
-                variant="danger"
-                onPress={endVideo}
-                style={styles.videoControl}
-              />
-              <PressableScale accessibilityRole="button" onPress={blockVideo} style={styles.reportButton}>
-                <Ionicons name="ban-outline" size={20} color={colors.danger} />
-              </PressableScale>
-              <PressableScale accessibilityRole="button" onPress={reportVideo} style={styles.reportButton}>
-                <Ionicons name="flag-outline" size={20} color={colors.danger} />
-              </PressableScale>
+          <View style={styles.videoIntro}>
+            <View style={styles.videoIcon}>
+              <Ionicons name="videocam" size={24} color={colors.onAccent} />
             </View>
-          ) : (
-            <PrimaryButton label="Find Video Match" icon="videocam-outline" onPress={startVideo} />
-          )}
+            <View style={styles.videoText}>
+              <AppText style={[styles.videoTitle, darkMode && styles.textOnDark]}>
+                One-to-one video match
+              </AppText>
+              <AppText style={[styles.videoCopy, darkMode && styles.mutedOnDark]}>
+                Match with a real verified member. Camera starts off and you control when to reveal.
+              </AppText>
+            </View>
+          </View>
+          <View style={styles.safetyRow}>
+            <SafetyItem icon="videocam-off-outline" label="Camera off first" />
+            <SafetyItem icon="shield-checkmark-outline" label="Report or block" />
+            <SafetyItem icon="exit-outline" label="Leave anytime" />
+          </View>
+          <PrimaryButton label="Find Video Match" icon="videocam-outline" onPress={startVideo} />
+          {Platform.OS === 'web' ? (
+            <AppText style={styles.mobileOnlyText}>
+              Live video is available in the installed Android and iOS app.
+            </AppText>
+          ) : null}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>Nearby members</AppText>
+          <AppText style={[styles.sectionCopy, darkMode && styles.mutedOnDark]}>
+            Profiles only. This tab has no chat requests.
+          </AppText>
         </View>
 
         <View style={styles.memberGrid}>
@@ -170,6 +375,7 @@ export function VideoNearbyScreen({ profile, darkMode = false }: Props) {
                 <View style={styles.photoActions}>
                   <PressableScale
                     accessibilityRole="button"
+                    accessibilityLabel={`Report ${member.nickname}`}
                     onPress={() => handleNearbySafety('report', member)}
                     style={styles.photoIcon}
                   >
@@ -177,35 +383,51 @@ export function VideoNearbyScreen({ profile, darkMode = false }: Props) {
                   </PressableScale>
                   <PressableScale
                     accessibilityRole="button"
+                    accessibilityLabel={`Block ${member.nickname}`}
                     onPress={() => handleNearbySafety('block', member)}
                     style={styles.photoIcon}
                   >
                     <Ionicons name="ban" size={15} color={colors.onAccent} />
                   </PressableScale>
                 </View>
-                <AppText style={styles.photoLocation}>Los Angeles, CA</AppText>
+                <AppText style={styles.photoLocation}>Near your area</AppText>
               </ImageBackground>
               <View style={styles.memberCaption}>
-                <AppText style={[styles.memberName, darkMode && styles.textOnDark]}>{member.nickname}, {member.age}</AppText>
+                <AppText style={[styles.memberName, darkMode && styles.textOnDark]}>
+                  {member.nickname}, {member.age}
+                </AppText>
                 <PressableScale
                   accessibilityRole="button"
-                  onPress={() => Alert.alert('Profile preview', member.prompt)}
+                  accessibilityLabel={`View ${member.nickname}'s profile`}
+                  onPress={() => Alert.alert(member.nickname, member.prompt)}
                   style={[styles.profileButton, darkMode && styles.softSurfaceDark]}
                 >
-                  <Ionicons name="person-outline" size={16} color={darkMode ? colors.onAccent : colors.ink} />
+                  <Ionicons
+                    name="person-outline"
+                    size={16}
+                    color={darkMode ? colors.onAccent : colors.ink}
+                  />
                 </PressableScale>
               </View>
             </View>
           ))}
         </View>
-
-        <View style={[styles.noChatCard, darkMode && styles.softSurfaceDark]}>
-          <Ionicons name="chatbubble-ellipses-outline" size={21} color={colors.muted} />
-          <AppText style={styles.noChatText}>
-            This tab intentionally has no chat, intro messages, or chat requests.
-          </AppText>
-        </View>
       </ScrollView>
+    </View>
+  );
+}
+
+function SafetyItem({
+  icon,
+  label
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+}) {
+  return (
+    <View style={styles.safetyItem}>
+      <Ionicons name={icon} size={16} color={colors.accent} />
+      <AppText style={styles.safetyLabel}>{label}</AppText>
     </View>
   );
 }
@@ -248,13 +470,27 @@ const styles = StyleSheet.create({
   },
   videoPanel: {
     padding: 14,
-    gap: 12,
-    borderRadius: 20,
+    gap: 14,
+    borderRadius: 8,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line
   },
+  videoIntro: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start'
+  },
+  videoIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
   videoText: {
+    flex: 1,
     gap: 4
   },
   videoTitle: {
@@ -262,24 +498,44 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   videoCopy: {
-    color: colors.muted
+    color: colors.muted,
+    lineHeight: 19
   },
-  videoControls: {
+  safetyRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    alignItems: 'center'
+    gap: 6
   },
-  videoControl: {
-    flex: 1
-  },
-  reportButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  safetyItem: {
+    flex: 1,
+    minHeight: 54,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.dangerSoft
+    gap: 4,
+    borderRadius: 8,
+    backgroundColor: colors.accentSoft
+  },
+  safetyLabel: {
+    color: colors.ink,
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  mobileOnlyText: {
+    color: colors.muted,
+    fontSize: 11,
+    textAlign: 'center'
+  },
+  sectionHeader: {
+    gap: 2
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '900'
+  },
+  sectionCopy: {
+    color: colors.muted,
+    fontSize: 12
   },
   memberGrid: {
     flexDirection: 'row',
@@ -288,7 +544,7 @@ const styles = StyleSheet.create({
   },
   memberTile: {
     width: '48%',
-    borderRadius: 16,
+    borderRadius: 8,
     backgroundColor: colors.surface,
     overflow: 'hidden',
     borderWidth: 1,
@@ -300,14 +556,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   memberImage: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8
   },
   distanceBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     minHeight: 26,
-    borderRadius: 10,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface
@@ -350,22 +606,85 @@ const styles = StyleSheet.create({
   profileButton: {
     width: 32,
     height: 32,
-    borderRadius: 12,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
   },
-  noChatCard: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceMuted
-  },
-  noChatText: {
+  matchingRoot: {
     flex: 1,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface
+  },
+  searchPulseOuter: {
+    width: 174,
+    height: 174,
+    borderRadius: 87,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F3FF'
+  },
+  searchPulseMiddle: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#B9DBFF'
+  },
+  searchPulseInner: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  matchingTitle: {
+    marginTop: 18,
+    fontSize: 25,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  matchingCopy: {
+    maxWidth: 320,
+    marginTop: 8,
     color: colors.muted,
-    fontWeight: '700'
+    textAlign: 'center',
+    lineHeight: 20
+  },
+  cancelButton: {
+    width: 180,
+    marginTop: 22
+  },
+  matchedAvatarFrame: {
+    position: 'relative'
+  },
+  matchedAvatar: {
+    width: 142,
+    height: 142,
+    borderRadius: 71,
+    borderWidth: 4,
+    borderColor: colors.accent
+  },
+  matchedBadge: {
+    position: 'absolute',
+    right: 4,
+    bottom: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: colors.surface,
+    backgroundColor: colors.success
+  },
+  matchedName: {
+    marginTop: 7,
+    fontSize: 18,
+    fontWeight: '800'
   }
 });

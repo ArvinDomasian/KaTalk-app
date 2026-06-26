@@ -1,6 +1,6 @@
-# Firestore Setup For Real Message Matching
+# Firestore Setup For Real Matching
 
-KaTalk Message Match now uses Firestore so two real signed-in users can match and chat.
+KaTalk uses Firestore so two real signed-in users can match for messages or video.
 
 Live matching uses these collections:
 
@@ -8,6 +8,8 @@ Live matching uses these collections:
 - `liveMessageMatchQueue`
 - `liveMessageMatches`
 - `liveMessageMatches/{matchId}/messages`
+- `liveVideoMatchQueue`
+- `liveVideoMatches`
 - `liveBlocks`
 - `profilePosts`
 
@@ -35,7 +37,7 @@ service cloud.firestore {
 }
 ```
 
-These rules require Firebase sign-in, but they are still too open for a public launch. Before public beta, replace them with locked rules for `liveProfiles`, `liveMessageMatchQueue`, `liveMessageMatches`, and message subcollections.
+These rules require Firebase sign-in, but they are still too open for a public launch. Before public beta, replace them with locked rules for the matchmaking queues, match records, profiles, and message subcollections.
 
 `liveBlocks` stores block records so two blocked users do not get paired again.
 
@@ -76,3 +78,18 @@ These rules let anyone view profile post images, but only the signed-in owner ca
 6. Both should enter the same anonymous 2-minute chat.
 7. Send messages from both accounts.
 8. Wait for the timer to end. Both accounts should automatically return to the matching screen.
+
+## Test Real Video
+
+Real video calling must be tested in installed Android/iOS builds. Expo Go and the browser preview do not include the native Agora calling engine.
+
+1. Add `EXPO_PUBLIC_AGORA_APP_ID` to `.env`.
+2. For early testing, use an Agora project that allows App ID authentication without tokens.
+3. For production, set `EXPO_PUBLIC_AGORA_TOKEN_ENDPOINT` to a secure endpoint that accepts `{ channelName, uid, role }` and returns `{ token }`.
+4. Rebuild and install KaTalk on two physical devices.
+5. Sign in with two different verified accounts.
+6. Open Video on both devices and tap `Find Video Match`.
+7. Both devices should enter the same private channel.
+8. Test microphone, camera, camera flip, speaker, leave, report, block, and reconnect behavior.
+
+Never put the Agora App Certificate in `.env` or inside the mobile app. It belongs only on the secure token server.

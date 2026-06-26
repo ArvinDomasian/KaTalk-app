@@ -1,5 +1,6 @@
 node_modules
 .expo
+.codex-run
 .env
 dist
 web-build

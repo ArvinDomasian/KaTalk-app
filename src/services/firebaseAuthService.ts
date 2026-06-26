@@ -84,6 +84,16 @@ export function getCurrentFirebaseUserId() {
   return getFirebaseAuth()?.currentUser?.uid ?? null;
 }
 
+export async function getCurrentFirebaseIdToken() {
+  const user = getFirebaseAuth()?.currentUser;
+
+  if (!user) {
+    return null;
+  }
+
+  return user.getIdToken();
+}
+
 export async function signOutCurrentUser() {
   const auth = getFirebaseAuth();
 

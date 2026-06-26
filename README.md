@@ -1,6 +1,6 @@
 # KaTalk
 
-KaTalk is an introvert-friendly dating app prototype for Android and iOS. The current build is an Expo + React Native scaffold with local mock services that mirror the planned Firebase and Agora backend.
+KaTalk is an introvert-friendly dating app for Android and iOS built with Expo, React Native, Firebase, and Agora.
 
 ## Current Build
 
@@ -13,10 +13,11 @@ KaTalk is an introvert-friendly dating app prototype for Android and iOS. The cu
 - Tab 1 has no audio call and no manual change-match button.
 - Saved matches are created only when both users save before the timer ends.
 - Tab 2: group voice room UI with join, leave, mute, and report controls.
-- Tab 3: optional video match UI with camera off by default, muted microphone, leave, report, and block.
+- Tab 3: Firebase-backed real-user video matching with a private Agora channel.
+- Video calls include camera off by default, mute, camera reveal, camera flip, speaker, duration, reconnect state, leave, report, and block.
 - Tab 3 nearby discovery shows distance and profile preview only.
 - Tab 3 has no chat, intro messages, or chat requests.
-- Local service layer for future Firebase, Firestore, Cloud Functions, Agora, and moderation integration.
+- Nearby discovery remains a prototype data source until location-backed discovery is connected.
 
 ## Setup
 
@@ -35,6 +36,8 @@ npm run start
 Then open it with Expo Go, an Android emulator, an iOS simulator, or the Expo web target.
 
 Real email verification requires Firebase Auth config. Copy `.env.example` to `.env`, fill in the `EXPO_PUBLIC_FIREBASE_*` values from your Firebase project, and enable Email/Password sign-in in Firebase Authentication. Blank values will not send emails, and Expo must be fully restarted after editing `.env`.
+
+Real video calls require `EXPO_PUBLIC_AGORA_APP_ID`. The browser and Expo Go cannot run the native Agora call engine, so video must be tested in an installed EAS Android/iOS build. Production calls should also set `EXPO_PUBLIC_AGORA_TOKEN_ENDPOINT`; the secure server must return an Agora token for the requested channel and user ID.
 
 ## Verification
 
@@ -57,6 +60,8 @@ Manual checks:
 - Blocked candidates no longer appear in message matching, video matching, or nearby discovery.
 - Voice rooms can be joined, muted, left, and reported.
 - Video starts with camera off and microphone muted.
+- Two installed mobile builds can join the same Agora video channel after Firebase pairs them.
+- Camera, microphone, camera flip, speaker, leave, report, block, and reconnect states work during a call.
 - Nearby profile actions do not create chats.
 
 ## Store Builds
@@ -95,8 +100,8 @@ See `STORE_RELEASE_CHECKLIST.md` for the full Play Store and App Store release c
 
 ## Backend Next Steps
 
-- Replace `src/services/localAppServices.ts` with Firebase-backed implementations.
+- Replace the remaining nearby and group-room mock services with Firebase-backed implementations.
 - Move the message-match timer to Cloud Functions so it is server-authoritative.
-- Generate Agora channel tokens from the backend for voice rooms and video.
+- Deploy the Agora token endpoint before production so the App Certificate never ships inside the app.
 - Store reports, blocks, saved matches, consent versions, and location records in Firestore.
 - Add an admin moderation dashboard before public beta.

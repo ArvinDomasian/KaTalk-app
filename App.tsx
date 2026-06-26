@@ -36,6 +36,7 @@ export default function App() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('message');
   const [isMessageChatting, setIsMessageChatting] = useState(false);
+  const [isVideoCalling, setIsVideoCalling] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadStoredThemeMode());
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const darkMode = themeMode === 'dark';
@@ -54,6 +55,7 @@ export default function App() {
     setIsEnteringApp(true);
     setActiveTab('message');
     setIsMessageChatting(false);
+    setIsVideoCalling(false);
 
     transitionTimerRef.current = setTimeout(() => {
       setProfile(nextProfile);
@@ -70,6 +72,7 @@ export default function App() {
     setIsLoggingOut(true);
     setIsEnteringApp(false);
     setIsMessageChatting(false);
+    setIsVideoCalling(false);
     clearStoredProfile();
 
     await Promise.all([
@@ -133,7 +136,13 @@ export default function App() {
     }
 
     if (activeTab === 'video') {
-      return <VideoNearbyScreen profile={profile} darkMode={darkMode} />;
+      return (
+        <VideoNearbyScreen
+          profile={profile}
+          darkMode={darkMode}
+          onCallStateChange={setIsVideoCalling}
+        />
+      );
     }
 
     return (
@@ -153,7 +162,9 @@ export default function App() {
     }
   }, [activeTab]);
 
-  const shouldShowTabs = Boolean(profile && !isEnteringApp && !isLoggingOut && !isMessageChatting);
+  const shouldShowTabs = Boolean(
+    profile && !isEnteringApp && !isLoggingOut && !isMessageChatting && !isVideoCalling
+  );
 
   return (
     <SafeAreaView style={[styles.root, darkMode && styles.rootDark]}>
