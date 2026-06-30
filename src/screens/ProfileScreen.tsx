@@ -579,11 +579,7 @@ export function ProfileScreen({
             onPress={settingsVisible ? closeSettings : openSettings}
             style={[styles.profileIconBadge, darkMode && styles.profileIconBadgeDark]}
           >
-            <Ionicons
-              name={settingsVisible ? 'close-outline' : 'settings-outline'}
-              size={25}
-              color={darkMode ? colors.onAccent : colors.ink}
-            />
+            <ProfileTopActionGlyph close={settingsVisible} color={darkMode ? colors.onAccent : colors.ink} />
           </PressableScale>
         </View>
 
@@ -597,10 +593,15 @@ export function ProfileScreen({
             {profile.avatarUrl ? (
               <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} />
             ) : (
-              <Ionicons name="person-circle-outline" size={82} color={colors.accent} />
+              <View style={styles.avatarFallback}>
+                <AppText style={styles.avatarInitial}>
+                  {profile.nickname.trim().charAt(0).toUpperCase() || 'K'}
+                </AppText>
+                <AppText style={styles.avatarFallbackText}>Avatar</AppText>
+              </View>
             )}
             <View style={styles.avatarEditBadge}>
-              <Ionicons name="camera" size={14} color={colors.onAccent} />
+              <AppText style={styles.avatarEditText}>+</AppText>
             </View>
             {Platform.OS === 'web'
               ? React.createElement('input', {
@@ -647,7 +648,7 @@ export function ProfileScreen({
               onPress={openAvatarSettings}
               style={[styles.changePhotoButton, darkMode && styles.softSurfaceDark]}
             >
-              <Ionicons name="image-outline" size={15} color={colors.accent} />
+              <AppText style={styles.changePhotoMark}>+</AppText>
               <AppText style={styles.changePhotoText}>Change photo</AppText>
             </PressableScale>
           </View>
@@ -668,7 +669,7 @@ export function ProfileScreen({
           style={[styles.subscriptionBanner, darkMode && styles.subscriptionBannerDark]}
         >
           <View style={styles.subscriptionIconBubble}>
-            <Ionicons name="sparkles-outline" size={20} color={colors.onAccent} />
+            <AppText style={styles.subscriptionIconText}>+</AppText>
           </View>
           <View style={styles.subscriptionBannerCopy}>
             <AppText style={[styles.subscriptionBannerTitle, darkMode && styles.textOnDark]}>
@@ -680,11 +681,13 @@ export function ProfileScreen({
                 : 'Real App Store and Google Play subscriptions with restore support.'}
             </AppText>
           </View>
-          <Ionicons name="chevron-forward" size={20} color={darkMode ? colors.onAccent : colors.ink} />
+          <AppText style={[styles.chevronText, darkMode && styles.textOnDark]}>{'>'}</AppText>
         </PressableScale>
 
         <View style={[styles.publicNote, darkMode && styles.publicNoteDark]}>
-          <Ionicons name="earth-outline" size={18} color={colors.accent} />
+          <View style={styles.publicNoteIcon}>
+            <AppText style={styles.publicNoteIconText}>i</AppText>
+          </View>
           <AppText style={[styles.publicNoteText, darkMode && styles.textOnDark]}>
             Posts here are public on your profile, so other KaTalk members can see them when they open your profile.
           </AppText>
@@ -706,7 +709,7 @@ export function ProfileScreen({
           ))
         ) : (
           <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
-            <Ionicons name="reader-outline" size={24} color={colors.muted} />
+            <AppText style={styles.emptyStateMark}>0</AppText>
             <AppText style={styles.emptyText}>No public posts yet.</AppText>
           </View>
         )}
@@ -876,8 +879,27 @@ export function ProfileScreen({
 function CreatePostIcon() {
   return (
     <View style={styles.createPostIcon}>
-      <Ionicons name="add" size={34} color={colors.onAccent} style={styles.createPostPlus} />
-      <Ionicons name="leaf" size={38} color={colors.onAccent} style={styles.createPostQuill} />
+      <View style={styles.createPostPlusVertical} />
+      <View style={styles.createPostPlusHorizontal} />
+    </View>
+  );
+}
+
+function ProfileTopActionGlyph({ close, color }: { close: boolean; color: string }) {
+  if (close) {
+    return (
+      <View style={styles.profileCloseGlyph}>
+        <View style={[styles.profileCloseBar, styles.profileCloseBarOne, { backgroundColor: color }]} />
+        <View style={[styles.profileCloseBar, styles.profileCloseBarTwo, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.profileMenuGlyph}>
+      <View style={[styles.profileMenuDot, { backgroundColor: color }]} />
+      <View style={[styles.profileMenuDot, { backgroundColor: color }]} />
+      <View style={[styles.profileMenuDot, { backgroundColor: color }]} />
     </View>
   );
 }
@@ -2139,6 +2161,44 @@ const styles = StyleSheet.create({
   profileIconBadgeDark: {
     backgroundColor: '#222735'
   },
+  profileIconText: {
+    color: colors.ink,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '900',
+    letterSpacing: 0
+  },
+  profileMenuGlyph: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3
+  },
+  profileMenuDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2
+  },
+  profileCloseGlyph: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative'
+  },
+  profileCloseBar: {
+    position: 'absolute',
+    width: 18,
+    height: 2,
+    borderRadius: 1
+  },
+  profileCloseBarOne: {
+    transform: [{ rotate: '45deg' }]
+  },
+  profileCloseBarTwo: {
+    transform: [{ rotate: '-45deg' }]
+  },
   settingsOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 10,
@@ -2616,6 +2676,22 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: colors.accentSoft
   },
+  avatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  avatarInitial: {
+    color: colors.accent,
+    fontSize: 34,
+    lineHeight: 38,
+    fontWeight: '900'
+  },
+  avatarFallbackText: {
+    color: colors.accent,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '900'
+  },
   avatarEditBadge: {
     position: 'absolute',
     right: 3,
@@ -2628,6 +2704,12 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.surface,
     backgroundColor: colors.accent
+  },
+  avatarEditText: {
+    color: colors.onAccent,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '900'
   },
   changePhotoButton: {
     alignSelf: 'flex-start',
@@ -2642,6 +2724,12 @@ const styles = StyleSheet.create({
   changePhotoText: {
     color: colors.accent,
     fontSize: 12,
+    fontWeight: '900'
+  },
+  changePhotoMark: {
+    color: colors.accent,
+    fontSize: 15,
+    lineHeight: 17,
     fontWeight: '900'
   },
   avatarImage: {
@@ -2677,12 +2765,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#201C2E'
   },
   subscriptionIconBubble: {
-    width: 42,
+    width: 54,
     height: 42,
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#8B6AF2'
+  },
+  subscriptionIconText: {
+    color: colors.onAccent,
+    fontSize: 24,
+    lineHeight: 27,
+    fontWeight: '900'
   },
   subscriptionBannerCopy: {
     flex: 1,
@@ -2699,6 +2793,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '700'
+  },
+  chevronText: {
+    color: colors.ink,
+    fontSize: 20,
+    lineHeight: 22,
+    fontWeight: '900'
   },
   interestRow: {
     flexDirection: 'row',
@@ -2726,6 +2826,20 @@ const styles = StyleSheet.create({
   },
   publicNoteDark: {
     backgroundColor: '#17283D'
+  },
+  publicNoteIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  publicNoteIconText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    lineHeight: 14,
+    fontWeight: '900'
   },
   publicNoteText: {
     flex: 1,
@@ -2924,6 +3038,20 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },
     elevation: 5
+  },
+  createPostPlusVertical: {
+    position: 'absolute',
+    width: 4,
+    height: 28,
+    borderRadius: 2,
+    backgroundColor: colors.onAccent
+  },
+  createPostPlusHorizontal: {
+    position: 'absolute',
+    width: 28,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.onAccent
   },
   createPostPlus: {
     position: 'absolute',
@@ -3222,6 +3350,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: colors.surfaceMuted
+  },
+  emptyStateMark: {
+    color: colors.muted,
+    fontSize: 18,
+    lineHeight: 21,
+    fontWeight: '900'
   },
   emptyText: {
     color: colors.muted,

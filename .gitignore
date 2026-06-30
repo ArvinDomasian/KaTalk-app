@@ -2,6 +2,8 @@ node_modules
 .expo
 .npm-cache
 .expo-home
+.eas-home
+.eas-home-local
 .codex-run
 .env
 dist

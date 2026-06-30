@@ -48,6 +48,15 @@ type FirebasePublicConfig = {
   appId?: string;
 };
 
+const firebaseFallbackConfig: FirebasePublicConfig = {
+  apiKey: 'AIzaSyBKJXkyKBo2Oyo4LzfhcdFKAHneYlH9VoQ',
+  authDomain: 'katalk-fbaf6.firebaseapp.com',
+  projectId: 'katalk-fbaf6',
+  storageBucket: 'katalk-fbaf6.firebasestorage.app',
+  messagingSenderId: '621528799120',
+  appId: '1:621528799120:web:5c3486122c4d10bf190515'
+};
+
 function getExtraFirebaseConfig(): FirebasePublicConfig {
   const extra = Constants.expoConfig?.extra ?? Constants.manifest2?.extra ?? {};
   const firebase = (extra as { firebase?: FirebasePublicConfig }).firebase;
@@ -59,12 +68,12 @@ function getFirebaseConfig(): FirebasePublicConfig {
   const extraConfig = getExtraFirebaseConfig();
 
   return {
-    apiKey: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_API_KEY) || cleanEnvValue(extraConfig.apiKey),
-    authDomain: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN) || cleanEnvValue(extraConfig.authDomain),
-    projectId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID) || cleanEnvValue(extraConfig.projectId),
-    storageBucket: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET) || cleanEnvValue(extraConfig.storageBucket),
-    messagingSenderId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID) || cleanEnvValue(extraConfig.messagingSenderId),
-    appId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_APP_ID) || cleanEnvValue(extraConfig.appId)
+    apiKey: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_API_KEY) || cleanEnvValue(extraConfig.apiKey) || firebaseFallbackConfig.apiKey,
+    authDomain: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN) || cleanEnvValue(extraConfig.authDomain) || firebaseFallbackConfig.authDomain,
+    projectId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID) || cleanEnvValue(extraConfig.projectId) || firebaseFallbackConfig.projectId,
+    storageBucket: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET) || cleanEnvValue(extraConfig.storageBucket) || firebaseFallbackConfig.storageBucket,
+    messagingSenderId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID) || cleanEnvValue(extraConfig.messagingSenderId) || firebaseFallbackConfig.messagingSenderId,
+    appId: cleanEnvValue(process.env.EXPO_PUBLIC_FIREBASE_APP_ID) || cleanEnvValue(extraConfig.appId) || firebaseFallbackConfig.appId
   };
 }
 

@@ -2,7 +2,7 @@
   "expo": {
     "name": "KaTalk",
     "slug": "katalk",
-    "version": "0.1.0",
+    "version": "0.1.6",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.katalk.app",
-      "versionCode": 1,
+      "versionCode": 9,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

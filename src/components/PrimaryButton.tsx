@@ -1,6 +1,5 @@
 import React from 'react';
 import { StyleSheet, ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { AppText } from './AppText';
 import { PressableScale } from './PressableScale';
 import { colors } from '../theme';
@@ -8,7 +7,7 @@ import { colors } from '../theme';
 type Props = {
   label: string;
   onPress: () => void;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: string;
   variant?: 'primary' | 'secondary' | 'danger';
   disabled?: boolean;
   style?: ViewStyle;
@@ -17,7 +16,6 @@ type Props = {
 export function PrimaryButton({
   label,
   onPress,
-  icon,
   variant = 'primary',
   disabled,
   style
@@ -34,13 +32,6 @@ export function PrimaryButton({
         style
       ]}
     >
-      {icon ? (
-        <Ionicons
-          name={icon}
-          size={18}
-          color={variant === 'primary' ? colors.onAccent : colors.ink}
-        />
-      ) : null}
       <AppText
         style={[
           styles.label,

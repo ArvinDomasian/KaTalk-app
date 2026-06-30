@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
 
 import { RegistrationScreen } from './src/screens/RegistrationScreen';
 import { MessageMatchScreen } from './src/screens/MessageMatchScreen';
@@ -23,11 +22,13 @@ import {
 import { colors } from './src/theme';
 import type { ActiveTab, ThemeMode, UserProfile } from './src/types';
 
-const tabs: Array<{ key: ActiveTab; label: string; icon: keyof typeof Ionicons.glyphMap }> = [
-  { key: 'message', label: 'Message', icon: 'chatbubbles-outline' },
-  { key: 'rooms', label: 'Rooms', icon: 'mic-outline' },
-  { key: 'video', label: 'Video', icon: 'videocam-outline' },
-  { key: 'profile', label: 'Profile', icon: 'person-circle-outline' }
+type TabIconName = 'message' | 'rooms' | 'video' | 'profile';
+
+const tabs: Array<{ key: ActiveTab; label: string; icon: TabIconName }> = [
+  { key: 'message', label: 'Message', icon: 'message' },
+  { key: 'rooms', label: 'Rooms', icon: 'rooms' },
+  { key: 'video', label: 'Video', icon: 'video' },
+  { key: 'profile', label: 'Profile', icon: 'profile' }
 ];
 
 export default function App() {
@@ -186,11 +187,9 @@ export default function App() {
                 style={[styles.tabButton, isActive && styles.tabButtonActive]}
                 onPress={() => setActiveTab(tab.key)}
               >
-                <Ionicons
-                  name={tab.icon}
-                  size={22}
-                  color={isActive ? colors.onAccent : inactiveColor}
-                />
+                <View style={[styles.tabMark, isActive && styles.tabMarkActive]}>
+                  <AppTabGlyph name={tab.icon} color={isActive ? colors.onAccent : inactiveColor} />
+                </View>
                 <AppText style={[styles.tabLabel, darkMode && styles.tabLabelDark, isActive && styles.tabLabelActive]}>
                   {tab.label}
                 </AppText>
@@ -200,6 +199,44 @@ export default function App() {
         </View>
       ) : null}
     </SafeAreaView>
+  );
+}
+
+function AppTabGlyph({ name, color }: { name: TabIconName; color: string }) {
+  if (name === 'message') {
+    return (
+      <View style={styles.glyphBox}>
+        <View style={[styles.messageGlyph, { borderColor: color }]}>
+          <View style={[styles.messageGlyphTail, { borderTopColor: color }]} />
+        </View>
+      </View>
+    );
+  }
+
+  if (name === 'rooms') {
+    return (
+      <View style={styles.glyphBox}>
+        <View style={[styles.micHead, { borderColor: color }]} />
+        <View style={[styles.micStem, { backgroundColor: color }]} />
+        <View style={[styles.micBase, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  if (name === 'video') {
+    return (
+      <View style={styles.videoGlyph}>
+        <View style={[styles.videoBody, { borderColor: color }]} />
+        <View style={[styles.videoTail, { borderLeftColor: color }]} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.glyphBox}>
+      <View style={[styles.profileHead, { backgroundColor: color }]} />
+      <View style={[styles.profileBody, { borderColor: color }]} />
+    </View>
   );
 }
 
@@ -253,6 +290,92 @@ const styles = StyleSheet.create({
   },
   tabButtonActive: {
     backgroundColor: colors.accent
+  },
+  tabMark: {
+    width: 24,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  tabMarkActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.18)'
+  },
+  glyphBox: {
+    width: 22,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  messageGlyph: {
+    width: 18,
+    height: 13,
+    borderWidth: 2,
+    borderRadius: 6
+  },
+  messageGlyphTail: {
+    position: 'absolute',
+    left: 4,
+    bottom: -6,
+    width: 0,
+    height: 0,
+    borderTopWidth: 6,
+    borderRightWidth: 6,
+    borderRightColor: 'transparent'
+  },
+  micHead: {
+    width: 10,
+    height: 14,
+    borderWidth: 2,
+    borderRadius: 6
+  },
+  micStem: {
+    width: 2,
+    height: 5,
+    borderRadius: 1,
+    marginTop: -1
+  },
+  micBase: {
+    width: 12,
+    height: 2,
+    borderRadius: 1
+  },
+  videoGlyph: {
+    width: 24,
+    height: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  videoBody: {
+    width: 15,
+    height: 12,
+    borderWidth: 2,
+    borderRadius: 4
+  },
+  videoTail: {
+    width: 0,
+    height: 0,
+    marginLeft: 2,
+    borderTopWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftWidth: 7,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent'
+  },
+  profileHead: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginBottom: 1
+  },
+  profileBody: {
+    width: 16,
+    height: 8,
+    borderWidth: 2,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderBottomWidth: 0
   },
   tabLabel: {
     fontSize: 12,

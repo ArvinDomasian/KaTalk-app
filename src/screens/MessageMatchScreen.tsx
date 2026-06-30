@@ -12,7 +12,6 @@ import {
   TextInput,
   View
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
@@ -667,13 +666,13 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
               <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>KaTalk</AppText>
             </View>
             <PressableScale accessibilityRole="button" style={[styles.roundIcon, darkMode && styles.roundIconDark]}>
-              <Ionicons name="search-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+              <SearchGlyph color={darkMode ? colors.onAccent : colors.ink} />
             </PressableScale>
           </View>
 
           <View style={styles.sectionHeader}>
             <AppText style={[styles.sectionTitleSmall, darkMode && styles.textOnDark]}>Story</AppText>
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+            <AppText style={styles.dotsText}>...</AppText>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyRow}>
             <PressableScale
@@ -682,7 +681,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
               style={styles.storyItem}
             >
               <View style={[styles.addStory, darkMode && styles.softSurfaceDark]}>
-                <Ionicons name="add" size={24} color={darkMode ? colors.onAccent : colors.ink} />
+                <AppText style={[styles.addStoryText, darkMode && styles.textOnDark]}>+</AppText>
               </View>
               <AppText style={[styles.storyName, darkMode && styles.textOnDark]}>Add Story</AppText>
             </PressableScale>
@@ -697,7 +696,9 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                   <Image source={{ uri: item.photoUrl }} style={[styles.storyImage, item.mine && styles.myStoryImage]} />
                 ) : (
                   <View style={[styles.storyImageFallback, item.mine && styles.myStoryImage]}>
-                    <Ionicons name="person" size={22} color={colors.onAccent} />
+                    <AppText style={styles.storyFallbackText}>
+                      {item.nickname.trim().charAt(0).toUpperCase() || 'K'}
+                    </AppText>
                   </View>
                 )}
                 <AppText style={[styles.storyName, darkMode && styles.textOnDark]} numberOfLines={1}>
@@ -716,7 +717,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
             </View>
             {homeNotice ? (
               <View style={styles.homeNotice}>
-                <Ionicons name="checkmark-circle-outline" size={18} color={colors.success} />
+                <AppText style={styles.homeNoticeMark}>OK</AppText>
                 <AppText style={styles.homeNoticeText}>{homeNotice}</AppText>
               </View>
             ) : null}
@@ -737,7 +738,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
 
           <View style={styles.sectionHeader}>
             <AppText style={[styles.sectionTitleSmall, darkMode && styles.textOnDark]}>Chat</AppText>
-            <Ionicons name="ellipsis-horizontal" size={20} color={colors.muted} />
+            <AppText style={styles.dotsText}>...</AppText>
           </View>
           <View style={styles.chatList}>
             {inboxThreads.map((thread, index) => (
@@ -763,7 +764,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                   {thread.unread ? (
                     <View style={styles.unreadDot} />
                   ) : index < 2 ? (
-                    <Ionicons name="checkmark-done" size={16} color={colors.accent} />
+                    <AppText style={styles.seenText}>Seen</AppText>
                   ) : null}
                 </View>
               </PressableScale>
@@ -808,7 +809,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                 }
               ]}
             >
-              <Ionicons name="timer-outline" size={17} color={timerTone} />
+              <AppText style={[styles.timerIconText, { color: timerTone }]}>T</AppText>
               <AppText style={[styles.timerText, { color: timerTone }]}>
                 {formatTimer(secondsLeft)}
               </AppText>
@@ -876,7 +877,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                 />
               </View>
               <View style={styles.saveStatus}>
-                <Ionicons name="heart-outline" size={17} color={colors.onAccent} />
+                <AppText style={styles.saveStatusMark}>Save</AppText>
                 <AppText style={styles.saveStatusText}>
                   {matchComplete
                     ? 'Both saved. This chat will move to saved matches after the timer ends.'
@@ -895,7 +896,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                   multiline
                 />
                 <PressableScale accessibilityRole="button" onPress={sendMessage} style={styles.sendButton}>
-                  <Ionicons name="send" size={20} color={colors.onAccent} />
+                  <AppText style={styles.sendButtonText}>{'>'}</AppText>
                 </PressableScale>
               </View>
             </View>
@@ -945,12 +946,10 @@ function MatchSearchWindow({
           >
             {candidate?.photoUrl ? (
               <Image source={{ uri: candidate.photoUrl }} style={styles.matchWindowImage} />
+            ) : isNone ? (
+              <SearchGlyph color={colors.accent} />
             ) : (
-              <Ionicons
-                name={isNone ? 'search-outline' : 'person-circle-outline'}
-                size={64}
-                color={isFound ? colors.onAccent : colors.accent}
-              />
+              <AppText style={[styles.matchWindowInitial, isFound && styles.matchWindowInitialFound]}>K</AppText>
             )}
           </View>
           <AppText style={[styles.matchWindowTitle, darkMode && styles.textOnDark]}>
@@ -967,6 +966,15 @@ function MatchSearchWindow({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function SearchGlyph({ color }: { color: string }) {
+  return (
+    <View style={styles.searchGlyph}>
+      <View style={[styles.searchLens, { borderColor: color }]} />
+      <View style={[styles.searchHandle, { backgroundColor: color }]} />
+    </View>
   );
 }
 
@@ -993,7 +1001,7 @@ function StoryComposerModal({
           <View style={styles.socialModalHeader}>
             <AppText style={[styles.socialModalTitle, darkMode && styles.textOnDark]}>Create story</AppText>
             <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
-              <Ionicons name="close-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+              <AppText style={[styles.socialCloseText, darkMode && styles.textOnDark]}>X</AppText>
             </PressableScale>
           </View>
           <TextInput
@@ -1041,7 +1049,9 @@ function StoryViewerModal({
                 <Image source={{ uri: story.photoUrl }} style={styles.storyViewerAvatar} />
               ) : (
                 <View style={styles.storyViewerAvatarFallback}>
-                  <Ionicons name="person" size={23} color={colors.onAccent} />
+                  <AppText style={styles.storyViewerInitial}>
+                    {story.nickname.trim().charAt(0).toUpperCase() || 'K'}
+                  </AppText>
                 </View>
               )}
               <View style={styles.storyViewerCopy}>
@@ -1051,7 +1061,7 @@ function StoryViewerModal({
                 </AppText>
               </View>
               <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
-                <Ionicons name="close-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+                <AppText style={[styles.socialCloseText, darkMode && styles.textOnDark]}>X</AppText>
               </PressableScale>
             </View>
             <View style={styles.storyTextPanel}>
@@ -1095,7 +1105,7 @@ function InboxThreadModal({
                 <AppText style={styles.inboxMeta}>Saved-message preview</AppText>
               </View>
               <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
-                <Ionicons name="close-outline" size={21} color={darkMode ? colors.onAccent : colors.ink} />
+                <AppText style={[styles.socialCloseText, darkMode && styles.textOnDark]}>X</AppText>
               </PressableScale>
             </View>
 
@@ -1133,11 +1143,11 @@ function InboxThreadModal({
               />
               <PressableScale
                 accessibilityRole="button"
-                disabled={!draft.trim()}
-                onPress={onSend}
-                style={[styles.inboxSendButton, !draft.trim() && styles.inboxSendButtonDisabled]}
-              >
-                <Ionicons name="send" size={19} color={colors.onAccent} />
+              disabled={!draft.trim()}
+              onPress={onSend}
+              style={[styles.inboxSendButton, !draft.trim() && styles.inboxSendButtonDisabled]}
+            >
+                <AppText style={styles.sendButtonText}>{'>'}</AppText>
               </PressableScale>
             </View>
           </View>
@@ -1206,6 +1216,15 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%'
   },
+  matchWindowInitial: {
+    color: colors.accent,
+    fontSize: 42,
+    lineHeight: 48,
+    fontWeight: '900'
+  },
+  matchWindowInitialFound: {
+    color: colors.onAccent
+  },
   matchWindowTitle: {
     marginTop: 4,
     fontSize: 21,
@@ -1253,10 +1272,39 @@ const styles = StyleSheet.create({
     borderColor: '#2A2E38',
     backgroundColor: '#222735'
   },
+  searchGlyph: {
+    width: 20,
+    height: 20,
+    position: 'relative'
+  },
+  searchLens: {
+    position: 'absolute',
+    left: 1,
+    top: 1,
+    width: 13,
+    height: 13,
+    borderWidth: 2,
+    borderRadius: 7
+  },
+  searchHandle: {
+    position: 'absolute',
+    right: 2,
+    bottom: 3,
+    width: 8,
+    height: 2,
+    borderRadius: 1,
+    transform: [{ rotate: '45deg' }]
+  },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between'
+  },
+  dotsText: {
+    color: colors.muted,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '900'
   },
   sectionTitleSmall: {
     fontSize: 16,
@@ -1282,6 +1330,12 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     backgroundColor: colors.surfaceMuted
   },
+  addStoryText: {
+    color: colors.ink,
+    fontSize: 30,
+    lineHeight: 34,
+    fontWeight: '500'
+  },
   storyImage: {
     width: 56,
     height: 56,
@@ -1301,6 +1355,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent
+  },
+  storyFallbackText: {
+    color: colors.onAccent,
+    fontSize: 20,
+    lineHeight: 24,
+    fontWeight: '900'
   },
   storyName: {
     fontSize: 11,
@@ -1339,6 +1399,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '800'
+  },
+  homeNoticeMark: {
+    color: colors.success,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
   },
   matchStatusRow: {
     minHeight: 44,
@@ -1401,6 +1467,12 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 11
   },
+  seenText: {
+    color: colors.accent,
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '900'
+  },
   unreadDot: {
     width: 9,
     height: 9,
@@ -1451,6 +1523,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   timerText: {
+    fontWeight: '900'
+  },
+  timerIconText: {
+    fontSize: 12,
+    lineHeight: 14,
     fontWeight: '900'
   },
   messages: {
@@ -1528,6 +1605,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 13
   },
+  saveStatusMark: {
+    color: colors.onAccent,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -1560,6 +1643,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  sendButtonText: {
+    color: colors.onAccent,
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '900'
   },
   endedPanel: {
     padding: 16,
@@ -1648,6 +1737,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
   },
+  socialCloseText: {
+    color: colors.ink,
+    fontSize: 14,
+    lineHeight: 17,
+    fontWeight: '900'
+  },
   storyInput: {
     minHeight: 130,
     borderRadius: 16,
@@ -1707,6 +1802,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent
+  },
+  storyViewerInitial: {
+    color: colors.onAccent,
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '900'
   },
   storyViewerCopy: {
     flex: 1
