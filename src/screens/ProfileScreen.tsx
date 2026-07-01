@@ -83,28 +83,28 @@ const freeUserBenefits = [
 const membershipTiers = [
   {
     title: 'Premium',
-    price: '$9.99/month',
+    price: 'PHP 499/month',
     tagline: 'Best first paid tier for serious daily use.',
     features: ['Remove ads', 'Unlimited likes', 'See who liked you', '5 Super Likes per day', 'Read receipts']
   },
   {
     title: 'Premium Plus',
-    price: '$19.99/month',
+    price: 'PHP 999/month',
     tagline: 'For users who want more discovery power.',
     features: ['Everything in Premium', 'Monthly profile boost', 'Message before matching', 'Travel Mode', 'AI opener messages']
   },
   {
     title: 'VIP',
-    price: '$29.99/month',
+    price: 'PHP 1,499/month',
     tagline: 'Highest visibility and early access tier.',
     features: ['Everything in Premium Plus', 'VIP badge', 'Highest ranking', 'Exclusive events', 'Priority support']
   }
 ];
 const storeProductIdeas = [
-  { title: 'Boosts', price: '$1.99+', detail: 'Raise profile visibility for a short time.' },
-  { title: 'Super Likes', price: '$2.99+', detail: 'Stand out before a match happens.' },
-  { title: 'Coins', price: '$0.99+', detail: 'Buy gifts, boosts, profile themes, or AI prompts.' },
-  { title: 'Fast Verification', price: '$2.99', detail: 'Paid review queue for faster profile verification.' }
+  { title: 'Boosts', price: 'PHP 99+', detail: 'Raise profile visibility for a short time.' },
+  { title: 'Super Likes', price: 'PHP 149+', detail: 'Stand out before a match happens.' },
+  { title: 'Coins', price: 'PHP 49+', detail: 'Buy gifts, boosts, profile themes, or AI prompts.' },
+  { title: 'Fast Verification', price: 'PHP 149', detail: 'Paid review queue for faster profile verification.' }
 ];
 const monetizationRoadmap = [
   'MVP first: profile, match, chat, safety, verification.',

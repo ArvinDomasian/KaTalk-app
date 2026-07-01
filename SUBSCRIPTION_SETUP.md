@@ -19,11 +19,13 @@ Use product IDs that contain these tier names so KaTalk can label the active mem
 
 | Tier | Example product ID | Suggested price |
 | --- | --- | --- |
-| Premium | `katalk_premium_monthly` | `$9.99/month` |
-| Premium Plus | `katalk_premium_plus_monthly` | `$19.99/month` |
-| VIP | `katalk_vip_monthly` | `$29.99/month` |
+| Premium | `katalk_premium_monthly` | `PHP 499/month` |
+| Premium Plus | `katalk_premium_plus_monthly` | `PHP 999/month` |
+| VIP | `katalk_vip_monthly` | `PHP 1,499/month` |
 
 Optional yearly products can use IDs like `katalk_premium_yearly`, `katalk_premium_plus_yearly`, and `katalk_vip_yearly`.
+
+Set the real Philippine peso prices in Google Play Console. RevenueCat returns the live localized `priceString`, so the app can show the actual Google Play price after your products are active.
 
 ## Optional One-Time Purchases
 
