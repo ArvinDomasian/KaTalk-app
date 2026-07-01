@@ -2,7 +2,7 @@
   "expo": {
     "name": "KaTalk",
     "slug": "katalk",
-    "version": "0.1.6",
+    "version": "0.1.9",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.katalk.app",
-      "buildNumber": "1",
+      "buildNumber": "4",
       "infoPlist": {
         "NSCameraUsageDescription": "KaTalk uses the camera only when you join a video match.",
         "NSMicrophoneUsageDescription": "KaTalk uses the microphone only when you join a voice room or video match.",
@@ -20,7 +20,7 @@
     },
     "android": {
       "package": "com.katalk.app",
-      "versionCode": 9,
+      "versionCode": 12,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

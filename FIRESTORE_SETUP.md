@@ -12,6 +12,8 @@ Live matching uses these collections:
 - `liveVideoMatches`
 - `liveBlocks`
 - `profilePosts`
+- `reports`
+- `admins`
 
 ## Enable Firestore
 
@@ -40,6 +42,10 @@ service cloud.firestore {
 These rules require Firebase sign-in, but they are still too open for a public launch. Before public beta, replace them with locked rules for the matchmaking queues, match records, profiles, and message subcollections.
 
 `liveBlocks` stores block records so two blocked users do not get paired again.
+
+`reports` stores moderation reports that admins can review.
+
+`admins` stores admin access records. The document ID must be the Firebase Auth `uid` of the admin account.
 
 ## Enable Storage for photo posts
 

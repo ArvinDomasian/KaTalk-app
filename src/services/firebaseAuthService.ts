@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import {
   createUserWithEmailAndPassword,
   getAuth,
+  onAuthStateChanged,
   reload,
   sendEmailVerification,
   sendPasswordResetEmail,
@@ -118,6 +119,21 @@ function getFirebaseAuth() {
 
 export function getCurrentFirebaseUserId() {
   return getFirebaseAuth()?.currentUser?.uid ?? null;
+}
+
+export function subscribeFirebaseAuthUser(onChange: (uid: string | null) => void) {
+  const auth = getFirebaseAuth();
+
+  if (!auth) {
+    onChange(null);
+    return () => undefined;
+  }
+
+  return onAuthStateChanged(
+    auth,
+    (user) => onChange(user?.uid ?? null),
+    () => onChange(null)
+  );
 }
 
 export async function getCurrentFirebaseIdToken() {

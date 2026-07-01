@@ -23,6 +23,7 @@ import {
   getCurrentFirebaseIdToken,
   getCurrentFirebaseUserId
 } from './firebaseAuthService';
+import { submitSafetyReport } from './reportService';
 
 declare const process: {
   env: Record<string, string | undefined>;
@@ -498,6 +499,8 @@ export async function leaveLiveVideoMatch(matchId: string) {
 export async function recordLiveVideoSafety(matchId: string, action: 'report' | 'block') {
   const db = getVideoDb();
   const currentUid = getCurrentFirebaseUserId();
+  let targetUserId = '';
+  let targetNickname = '';
 
   if (!db || !currentUid) {
     throw new Error('Video safety needs Firebase sign-in.');
@@ -515,6 +518,10 @@ export async function recordLiveVideoSafety(matchId: string, action: 'report' | 
       ? (snapshot.data()?.participantIds as string[])
       : [];
     const otherUid = participantIds.find((id) => id !== currentUid);
+    const participantProfile = otherUid ? snapshot.data()?.participants?.[otherUid] : null;
+
+    targetUserId = otherUid ?? '';
+    targetNickname = String(participantProfile?.nickname ?? '');
 
     transaction.update(matchRef, {
       [action === 'report' ? 'reportedBy' : 'blockedBy']: arrayUnion(currentUid),
@@ -533,6 +540,18 @@ export async function recordLiveVideoSafety(matchId: string, action: 'report' | 
       });
     }
   });
+
+  if (action === 'report' && targetUserId) {
+    await submitSafetyReport({
+      source: 'video',
+      action: 'report',
+      actorId: currentUid,
+      targetId: targetUserId,
+      targetNickname,
+      matchId,
+      reason: 'Reported from video match'
+    });
+  }
 }
 
 export function agoraUidFor(userId: string) {

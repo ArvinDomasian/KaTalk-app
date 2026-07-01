@@ -18,6 +18,7 @@ const SUBSCRIPTION_TIMEOUT_ERROR = 'KATALK_SUBSCRIPTION_TIMEOUT';
 export type SubscriptionPlan = {
   packageId: string;
   productId: string;
+  tier: SubscriptionAccess['tier'];
   title: string;
   description: string;
   price: string;
@@ -117,6 +118,44 @@ function emptyAccess(entitlementId = getEntitlementId()): SubscriptionAccess {
   };
 }
 
+function tierFromProductId(productId?: string): SubscriptionAccess['tier'] {
+  const normalized = productId?.toLowerCase().replace(/[^a-z0-9]+/g, '_') ?? '';
+
+  if (normalized.includes('vip')) {
+    return 'vip';
+  }
+
+  if (normalized.includes('premium_plus') || normalized.includes('premiumplus')) {
+    return 'premium_plus';
+  }
+
+  if (normalized.includes('premium')) {
+    return 'premium';
+  }
+
+  if (normalized.includes('plus')) {
+    return 'plus';
+  }
+
+  return 'premium';
+}
+
+function tierLabel(tier: SubscriptionAccess['tier']) {
+  if (tier === 'vip') {
+    return 'KaTalk VIP';
+  }
+
+  if (tier === 'premium_plus') {
+    return 'KaTalk Premium Plus';
+  }
+
+  if (tier === 'premium' || tier === 'plus') {
+    return 'KaTalk Premium';
+  }
+
+  return 'Free account';
+}
+
 function accessFromCustomerInfo(customerInfo: CustomerInfo, entitlementId = getEntitlementId()): SubscriptionAccess {
   const entitlement = customerInfo.entitlements.active[entitlementId];
 
@@ -125,7 +164,7 @@ function accessFromCustomerInfo(customerInfo: CustomerInfo, entitlementId = getE
   }
 
   return {
-    tier: 'plus',
+    tier: tierFromProductId(entitlement.productIdentifier),
     isActive: true,
     entitlementId,
     productId: entitlement.productIdentifier,
@@ -161,11 +200,13 @@ function periodLabel(period: string | null) {
 
 function planFromPackage(planPackage: PurchasesPackage): SubscriptionPlan {
   const { product } = planPackage;
-  const title = product.title.replace(/\s*\([^)]*\)\s*$/, '').trim() || 'KaTalk Plus';
+  const title = product.title.replace(/\s*\([^)]*\)\s*$/, '').trim() || 'KaTalk Premium';
+  const tier = tierFromProductId(product.identifier);
 
   return {
     packageId: planPackage.identifier,
     productId: product.identifier,
+    tier,
     title,
     description: product.description || 'Unlock premium KaTalk access.',
     price: product.priceString,
@@ -189,7 +230,7 @@ function snapshotFromParts(
     isPremium: access.isActive,
     isStorePurchaseAvailable: canUseStore && Boolean(getPlatformApiKey()) && plans.length > 0,
     entitlementId,
-    statusText: access.isActive ? 'KaTalk Plus active' : 'Free account',
+    statusText: access.isActive ? `${tierLabel(access.tier)} active` : 'Free account',
     setupMessage,
     managementUrl: customerInfo?.managementURL ?? null,
     plans,

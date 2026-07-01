@@ -18,16 +18,50 @@ export type UserProfile = {
   acceptedPrivacy: boolean;
   acceptedRules: boolean;
   subscription?: SubscriptionAccess;
+  economy?: UserEconomy;
+  verification?: ProfileVerification;
+  moderation?: UserModeration;
 };
 
 export type SubscriptionAccess = {
-  tier: 'free' | 'plus';
+  tier: 'free' | 'plus' | 'premium' | 'premium_plus' | 'vip';
   isActive: boolean;
   entitlementId: string;
   productId?: string;
   store?: string;
   expiresAt?: string | null;
   updatedAt: string;
+};
+
+export type UserEconomy = {
+  dailyLikesRemaining: number;
+  dailyLikesResetAt: string;
+  boosts: number;
+  superLikes: number;
+  coins: number;
+  gifts: number;
+  profileSpotlights: number;
+  undoSwipes: number;
+};
+
+export type ProfileVerificationStatus = 'not_started' | 'manual_pending' | 'fast_track_pending' | 'verified';
+
+export type ProfileVerification = {
+  status: ProfileVerificationStatus;
+  badgeVisible: boolean;
+  requestedAt?: string;
+  method?: 'manual' | 'fast_track';
+  verifiedAt?: string;
+  verifiedBy?: string;
+};
+
+export type UserModeration = {
+  isBanned: boolean;
+  reason?: string;
+  bannedAt?: string;
+  bannedBy?: string;
+  unbannedAt?: string;
+  unbannedBy?: string;
 };
 
 export type MatchStatus = 'idle' | 'searching' | 'active' | 'expired' | 'saved';

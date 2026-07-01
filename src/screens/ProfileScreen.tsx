@@ -21,13 +21,25 @@ import {
   restoreSubscription,
   type SubscriptionSnapshot
 } from '../services/subscriptionService';
+import {
+  normalizeProfileVerification,
+  normalizeUserEconomy,
+  openAiTools,
+  requestFastVerification,
+  requestManualVerification,
+  spendBoost,
+  type UserFeatureResult
+} from '../services/userFeatureService';
+import { showRewardedLikeAd } from '../services/rewardedAdService';
 import { colors } from '../theme';
-import type { ProfilePost, UserProfile } from '../types';
+import type { ProfilePost, SubscriptionAccess, UserProfile } from '../types';
 
 type Props = {
   profile: UserProfile;
   darkMode: boolean;
   onDarkModeChange: (value: boolean) => void;
+  isAdmin?: boolean;
+  onOpenAdminDashboard?: () => void;
   onLogout: () => void;
   onProfileUpdate: (profile: UserProfile) => void;
 };
@@ -61,10 +73,73 @@ const interestSuggestions = [
 ];
 const emojiOptions = ['😊', '😂', '😍', '🥰', '😎', '😭', '🔥', '✨', '❤️', '👍'];
 
+const freeUserBenefits = [
+  '20 likes per day',
+  'See matches and chat',
+  'Basic age and distance filters',
+  'Report, block, and safety tools',
+  'Ads may appear for free accounts'
+];
+const membershipTiers = [
+  {
+    title: 'Premium',
+    price: '$9.99/month',
+    tagline: 'Best first paid tier for serious daily use.',
+    features: ['Remove ads', 'Unlimited likes', 'See who liked you', '5 Super Likes per day', 'Read receipts']
+  },
+  {
+    title: 'Premium Plus',
+    price: '$19.99/month',
+    tagline: 'For users who want more discovery power.',
+    features: ['Everything in Premium', 'Monthly profile boost', 'Message before matching', 'Travel Mode', 'AI opener messages']
+  },
+  {
+    title: 'VIP',
+    price: '$29.99/month',
+    tagline: 'Highest visibility and early access tier.',
+    features: ['Everything in Premium Plus', 'VIP badge', 'Highest ranking', 'Exclusive events', 'Priority support']
+  }
+];
+const storeProductIdeas = [
+  { title: 'Boosts', price: '$1.99+', detail: 'Raise profile visibility for a short time.' },
+  { title: 'Super Likes', price: '$2.99+', detail: 'Stand out before a match happens.' },
+  { title: 'Coins', price: '$0.99+', detail: 'Buy gifts, boosts, profile themes, or AI prompts.' },
+  { title: 'Fast Verification', price: '$2.99', detail: 'Paid review queue for faster profile verification.' }
+];
+const monetizationRoadmap = [
+  'MVP first: profile, match, chat, safety, verification.',
+  'Then subscriptions: Premium, Premium Plus, VIP.',
+  'Then consumables: boosts, super likes, coins, gifts.',
+  'Later: rewarded ads and AI profile help.'
+];
+
+function membershipTierLabel(tier?: SubscriptionAccess['tier']) {
+  if (tier === 'vip') {
+    return 'KaTalk VIP';
+  }
+
+  if (tier === 'premium_plus') {
+    return 'KaTalk Premium Plus';
+  }
+
+  if (tier === 'premium' || tier === 'plus') {
+    return 'KaTalk Premium';
+  }
+
+  return 'KaTalk Membership';
+}
+
+function activeMembershipTitle(snapshot: SubscriptionSnapshot | null, profile: UserProfile) {
+  const tier = snapshot?.access.isActive ? snapshot.access.tier : profile.subscription?.tier;
+  return `${membershipTierLabel(tier)} active`;
+}
+
 export function ProfileScreen({
   profile,
   darkMode,
   onDarkModeChange,
+  isAdmin = false,
+  onOpenAdminDashboard,
   onLogout,
   onProfileUpdate
 }: Props) {
@@ -102,6 +177,7 @@ export function ProfileScreen({
   });
   const [subscription, setSubscription] = useState<SubscriptionSnapshot | null>(null);
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
+  const [rewardAdBusy, setRewardAdBusy] = useState(false);
   const settingsProgress = useRef(new Animated.Value(0)).current;
   const settingsTranslateX = settingsProgress.interpolate({
     inputRange: [0, 1],
@@ -110,6 +186,8 @@ export function ProfileScreen({
   const voiceRecorderRef = useRef<any>(null);
   const voiceStreamRef = useRef<any>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
+  const economy = normalizeUserEconomy(profile.economy);
+  const verification = normalizeProfileVerification(profile.verification);
 
   useEffect(() => {
     setPosts(loadVisibleProfilePosts(profile.id));
@@ -366,6 +444,43 @@ export function ProfileScreen({
     });
   }
 
+  function applyUserFeatureResult(result: UserFeatureResult) {
+    onProfileUpdate(result.profile);
+    setStatus(result.message);
+  }
+
+  function handleUseBoost() {
+    applyUserFeatureResult(spendBoost(profile));
+  }
+
+  function handleManualVerification() {
+    applyUserFeatureResult(requestManualVerification(profile));
+  }
+
+  function handleFastVerification() {
+    applyUserFeatureResult(requestFastVerification(profile));
+  }
+
+  async function handleRewardedAd() {
+    if (rewardAdBusy) {
+      return;
+    }
+
+    setRewardAdBusy(true);
+    setStatus('Loading rewarded ad...');
+
+    try {
+      const result = await showRewardedLikeAd(profile);
+      applyUserFeatureResult(result);
+    } finally {
+      setRewardAdBusy(false);
+    }
+  }
+
+  function handleAiTools() {
+    applyUserFeatureResult(openAiTools(profile));
+  }
+
   async function handleSubscriptionRefresh() {
     setSubscriptionBusy(true);
     setSettingsStatus('Checking your subscription...');
@@ -385,7 +500,7 @@ export function ProfileScreen({
       const snapshot = await purchaseSubscriptionPlan(profile.id, packageId);
 
       applySubscriptionSnapshot(snapshot);
-      setSettingsStatus(snapshot.isPremium ? 'KaTalk Plus is active.' : snapshot.statusText);
+      setSettingsStatus(snapshot.statusText);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Purchase could not be completed.';
       setSettingsStatus(message);
@@ -403,7 +518,7 @@ export function ProfileScreen({
       const snapshot = await restoreSubscription(profile.id);
 
       applySubscriptionSnapshot(snapshot);
-      setSettingsStatus(snapshot.isPremium ? 'Purchase restored. KaTalk Plus is active.' : 'No active subscription was found for this store account.');
+      setSettingsStatus(snapshot.isPremium ? `Purchase restored. ${snapshot.statusText}.` : 'No active subscription was found for this store account.');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Restore could not be completed.';
       setSettingsStatus(message);
@@ -654,6 +769,27 @@ export function ProfileScreen({
           </View>
         </View>
 
+        {isAdmin && onOpenAdminDashboard ? (
+          <PressableScale
+            accessibilityRole="button"
+            onPress={onOpenAdminDashboard}
+            style={[styles.adminBanner, darkMode && styles.adminBannerDark]}
+          >
+            <View style={styles.adminIconBubble}>
+              <Ionicons name="shield-checkmark-outline" size={21} color={colors.onAccent} />
+            </View>
+            <View style={styles.adminBannerCopy}>
+              <AppText style={[styles.adminBannerTitle, darkMode && styles.textOnDark]}>
+                Admin dashboard
+              </AppText>
+              <AppText style={[styles.adminBannerMeta, darkMode && styles.mutedOnDark]}>
+                Review reports, bans, verification, and user stats.
+              </AppText>
+            </View>
+            <AppText style={[styles.chevronText, darkMode && styles.textOnDark]}>{'>'}</AppText>
+          </PressableScale>
+        ) : null}
+
         <PressableScale
           accessibilityRole="button"
           onPress={() => {
@@ -673,16 +809,64 @@ export function ProfileScreen({
           </View>
           <View style={styles.subscriptionBannerCopy}>
             <AppText style={[styles.subscriptionBannerTitle, darkMode && styles.textOnDark]}>
-              {subscription?.isPremium || profile.subscription?.isActive ? 'KaTalk Plus active' : 'Upgrade to KaTalk Plus'}
+              {subscription?.isPremium || profile.subscription?.isActive ? activeMembershipTitle(subscription, profile) : 'Upgrade membership'}
             </AppText>
             <AppText style={[styles.subscriptionBannerMeta, darkMode && styles.mutedOnDark]}>
               {subscription?.isPremium || profile.subscription?.isActive
                 ? 'Your premium access is connected to this account.'
-                : 'Real App Store and Google Play subscriptions with restore support.'}
+                : 'Premium, Premium Plus, VIP, and restore support.'}
             </AppText>
           </View>
           <AppText style={[styles.chevronText, darkMode && styles.textOnDark]}>{'>'}</AppText>
         </PressableScale>
+
+        <View style={[styles.roadmapCard, darkMode && styles.cardDark]}>
+          <View style={styles.roadmapTop}>
+            <View>
+              <AppText style={[styles.roadmapTitle, darkMode && styles.textOnDark]}>MVP tools</AppText>
+              <AppText style={[styles.roadmapMeta, darkMode && styles.mutedOnDark]}>
+                Likes, wallet, verification, rewards, and AI readiness.
+              </AppText>
+            </View>
+            <View style={[styles.verificationBadge, verification.status === 'verified' && styles.verificationBadgeVerified]}>
+              <AppText style={[styles.verificationBadgeText, verification.status === 'verified' && styles.verificationBadgeTextVerified]}>
+                {verification.status === 'verified'
+                  ? 'Verified'
+                  : verification.status === 'manual_pending'
+                    ? 'Reviewing'
+                    : verification.status === 'fast_track_pending'
+                      ? 'Fast review'
+                      : 'Unverified'}
+              </AppText>
+            </View>
+          </View>
+
+          <View style={styles.featureCounterGrid}>
+            <FeatureCounter label="Daily likes" value={profile.subscription?.isActive ? 'Unlimited' : String(economy.dailyLikesRemaining)} darkMode={darkMode} />
+            <FeatureCounter label="Coins" value={String(economy.coins)} darkMode={darkMode} />
+            <FeatureCounter label="Boosts" value={String(economy.boosts)} darkMode={darkMode} />
+            <FeatureCounter label="Super Likes" value={String(economy.superLikes)} darkMode={darkMode} />
+          </View>
+
+          <View style={styles.featureActionGrid}>
+            <FeatureAction label="Use boost" onPress={handleUseBoost} darkMode={darkMode} />
+            <FeatureAction label="Manual verify" onPress={handleManualVerification} darkMode={darkMode} />
+            <FeatureAction label="Fast verify" onPress={handleFastVerification} darkMode={darkMode} />
+            <FeatureAction
+              label={rewardAdBusy ? 'Loading ad...' : 'Reward ad'}
+              onPress={handleRewardedAd}
+              disabled={rewardAdBusy}
+              darkMode={darkMode}
+            />
+            <FeatureAction label="AI tools" onPress={handleAiTools} darkMode={darkMode} />
+          </View>
+        </View>
+
+        {status && !postComposerVisible ? (
+          <View style={[styles.profileStatusNote, darkMode && styles.softSurfaceDark]}>
+            <AppText style={[styles.profileStatusText, darkMode && styles.textOnDark]}>{status}</AppText>
+          </View>
+        ) : null}
 
         <View style={[styles.publicNote, darkMode && styles.publicNoteDark]}>
           <View style={styles.publicNoteIcon}>
@@ -801,7 +985,7 @@ export function ProfileScreen({
                       ? 'Avatar'
                       : settingsPanel === 'notifications'
                         ? 'Notifications'
-                        : 'KaTalk Plus'}
+                        : 'Memberships'}
               </AppText>
               <PressableScale
                 accessibilityRole="button"
@@ -825,6 +1009,8 @@ export function ProfileScreen({
                 onOpenAvatar={() => setSettingsPanel('avatar')}
                 onOpenNotifications={() => setSettingsPanel('notifications')}
                 onOpenSubscription={() => setSettingsPanel('subscription')}
+                isAdmin={isAdmin}
+                onOpenAdminDashboard={onOpenAdminDashboard}
                 logoutConfirmVisible={logoutConfirmVisible}
                 onStartLogout={() => setLogoutConfirmVisible(true)}
                 onCancelLogout={() => setLogoutConfirmVisible(false)}
@@ -1319,6 +1505,8 @@ function SettingsMainPanel({
   onOpenAvatar,
   onOpenNotifications,
   onOpenSubscription,
+  isAdmin = false,
+  onOpenAdminDashboard,
   logoutConfirmVisible,
   onStartLogout,
   onCancelLogout,
@@ -1331,6 +1519,8 @@ function SettingsMainPanel({
   onOpenAvatar: () => void;
   onOpenNotifications: () => void;
   onOpenSubscription: () => void;
+  isAdmin?: boolean;
+  onOpenAdminDashboard?: () => void;
   logoutConfirmVisible: boolean;
   onStartLogout: () => void;
   onCancelLogout: () => void;
@@ -1384,10 +1574,19 @@ function SettingsMainPanel({
         <SettingsOption
           darkMode={darkMode}
           icon="sparkles-outline"
-          title="KaTalk Plus"
-          meta={profile.subscription?.isActive ? 'Premium subscription active' : 'Upgrade, restore, or refresh subscription'}
+          title="Memberships"
+          meta={profile.subscription?.isActive ? `${membershipTierLabel(profile.subscription.tier)} active` : 'Premium, Premium Plus, VIP, restore'}
           onPress={onOpenSubscription}
         />
+        {isAdmin && onOpenAdminDashboard ? (
+          <SettingsOption
+            darkMode={darkMode}
+            icon="shield-checkmark-outline"
+            title="Admin dashboard"
+            meta="Reports, bans, verification, stats"
+            onPress={onOpenAdminDashboard}
+          />
+        ) : null}
         <View style={[styles.settingRow, darkMode && styles.drawerRowDark]}>
           <View style={styles.settingTextBlock}>
             <AppText style={[styles.settingTitle, darkMode && styles.textOnDark]}>Signed in as</AppText>
@@ -1460,21 +1659,20 @@ function SubscriptionPanel({
       <View style={[styles.plusHero, darkMode && styles.plusHeroDark]}>
         <View style={styles.plusHeroTop}>
           <View style={styles.plusHeroIcon}>
-            <Ionicons name="sparkles-outline" size={22} color={colors.onAccent} />
+            <AppText style={styles.plusHeroIconText}>K+</AppText>
           </View>
           <View style={styles.plusHeroCopy}>
-            <AppText style={[styles.plusTitle, darkMode && styles.textOnDark]}>KaTalk Plus</AppText>
+            <AppText style={[styles.plusTitle, darkMode && styles.textOnDark]}>KaTalk Memberships</AppText>
             <AppText style={[styles.plusMeta, darkMode && styles.mutedOnDark]}>
-              {isPremium ? 'Premium access is active on this account.' : 'Upgrade with real App Store or Google Play billing.'}
+              {isPremium ? 'Paid access is active on this account.' : 'Free-first app with real App Store and Google Play billing.'}
             </AppText>
           </View>
         </View>
 
         <View style={styles.plusFeatureList}>
-          <PlusFeature darkMode={darkMode} icon="flash-outline" text="More daily message-match starts" />
-          <PlusFeature darkMode={darkMode} icon="mic-outline" text="Priority access for busy voice rooms" />
-          <PlusFeature darkMode={darkMode} icon="videocam-outline" text="Extra video discovery chances" />
-          <PlusFeature darkMode={darkMode} icon="shield-checkmark-outline" text="Premium badge and stronger safety visibility" />
+          {monetizationRoadmap.map((item) => (
+            <PlusFeature key={item} darkMode={darkMode} text={item} />
+          ))}
         </View>
       </View>
 
@@ -1489,17 +1687,17 @@ function SubscriptionPanel({
               Entitlement: {snapshot?.entitlementId ?? 'katalk_plus'}
             </AppText>
           </View>
-          <Ionicons
-            name={isPremium ? 'checkmark-circle' : 'ellipse-outline'}
-            size={22}
-            color={isPremium ? colors.success : colors.muted}
-          />
+          <View style={[styles.statusBadge, isPremium && styles.statusBadgeActive]}>
+            <AppText style={[styles.statusBadgeText, isPremium && styles.statusBadgeTextActive]}>
+              {isPremium ? 'Active' : 'Free'}
+            </AppText>
+          </View>
         </View>
       </View>
 
       {setupMessage ? (
         <View style={[styles.subscriptionSetupBox, darkMode && styles.drawerRowDark]}>
-          <Ionicons name="information-circle-outline" size={19} color={colors.accent} />
+          <AppText style={styles.setupBadgeText}>i</AppText>
           <AppText style={[styles.subscriptionSetupText, darkMode && styles.drawerMutedText]}>
             {setupMessage}
           </AppText>
@@ -1507,7 +1705,26 @@ function SubscriptionPanel({
       ) : null}
 
       <View style={styles.settingsSection}>
-        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Plans</AppText>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Free account</AppText>
+        <View style={[styles.planCard, darkMode && styles.drawerRowDark]}>
+          <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>MVP access</AppText>
+          <View style={styles.plusFeatureList}>
+            {freeUserBenefits.map((item) => (
+              <PlusFeature key={item} darkMode={darkMode} text={item} />
+            ))}
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.settingsSection}>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Membership model</AppText>
+        {membershipTiers.map((tier) => (
+          <MonetizationTierCard key={tier.title} tier={tier} darkMode={darkMode} />
+        ))}
+      </View>
+
+      <View style={styles.settingsSection}>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Live store plans</AppText>
         {plans.length > 0 ? (
           plans.map((plan) => (
             <View key={plan.packageId} style={[styles.planCard, darkMode && styles.drawerRowDark]}>
@@ -1515,6 +1732,9 @@ function SubscriptionPanel({
                 <View style={styles.planTitleBlock}>
                   <View style={styles.planTitleRow}>
                     <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>{plan.title}</AppText>
+                    <View style={styles.tierBadge}>
+                      <AppText style={styles.tierBadgeText}>{plan.tier.replace('_', ' ')}</AppText>
+                    </View>
                     {plan.isRecommended ? (
                       <View style={styles.recommendedBadge}>
                         <AppText style={styles.recommendedText}>Best value</AppText>
@@ -1552,10 +1772,22 @@ function SubscriptionPanel({
           ))
         ) : (
           <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
-            <Ionicons name="storefront-outline" size={24} color={colors.muted} />
-            <AppText style={styles.emptyText}>No store plans loaded yet.</AppText>
+            <AppText style={styles.emptyText}>No RevenueCat store plans loaded yet.</AppText>
           </View>
         )}
+      </View>
+
+      <View style={styles.settingsSection}>
+        <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>One-time purchases</AppText>
+        {storeProductIdeas.map((item) => (
+          <StoreProductIdeaCard key={item.title} item={item} darkMode={darkMode} />
+        ))}
+        <View style={[styles.subscriptionSetupBox, darkMode && styles.drawerRowDark]}>
+          <AppText style={styles.setupBadgeText}>i</AppText>
+          <AppText style={[styles.subscriptionSetupText, darkMode && styles.drawerMutedText]}>
+            Add these as App Store / Google Play products, then expose them through RevenueCat before taking real payments.
+          </AppText>
+        </View>
       </View>
 
       <View style={styles.subscriptionActions}>
@@ -1565,7 +1797,6 @@ function SubscriptionPanel({
           onPress={onRestore}
           style={[styles.subscriptionActionButton, darkMode && styles.drawerRowDark]}
         >
-          <Ionicons name="refresh-outline" size={17} color={colors.accent} />
           <AppText style={styles.subscriptionActionText}>Restore</AppText>
         </PressableScale>
         <PressableScale
@@ -1574,7 +1805,6 @@ function SubscriptionPanel({
           onPress={onRefresh}
           style={[styles.subscriptionActionButton, darkMode && styles.drawerRowDark]}
         >
-          <Ionicons name="sync-outline" size={17} color={colors.accent} />
           <AppText style={styles.subscriptionActionText}>Refresh</AppText>
         </PressableScale>
       </View>
@@ -1585,7 +1815,6 @@ function SubscriptionPanel({
           onPress={openManagementLink}
           style={[styles.manageSubscriptionButton, darkMode && styles.drawerRowDark]}
         >
-          <Ionicons name="open-outline" size={17} color={colors.accent} />
           <AppText style={styles.subscriptionActionText}>Manage subscription</AppText>
         </PressableScale>
       ) : null}
@@ -1593,18 +1822,99 @@ function SubscriptionPanel({
   );
 }
 
+function MonetizationTierCard({
+  tier,
+  darkMode
+}: {
+  tier: (typeof membershipTiers)[number];
+  darkMode: boolean;
+}) {
+  return (
+    <View style={[styles.planCard, darkMode && styles.drawerRowDark]}>
+      <View style={styles.planTopRow}>
+        <View style={styles.planTitleBlock}>
+          <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>{tier.title}</AppText>
+          <AppText style={[styles.planMeta, darkMode && styles.drawerMutedText]}>{tier.tagline}</AppText>
+        </View>
+        <AppText style={[styles.planPrice, darkMode && styles.textOnDark]}>{tier.price}</AppText>
+      </View>
+      <View style={styles.plusFeatureList}>
+        {tier.features.map((feature) => (
+          <PlusFeature key={feature} darkMode={darkMode} text={feature} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function StoreProductIdeaCard({
+  item,
+  darkMode
+}: {
+  item: (typeof storeProductIdeas)[number];
+  darkMode: boolean;
+}) {
+  return (
+    <View style={[styles.productIdeaCard, darkMode && styles.drawerRowDark]}>
+      <View style={styles.planTitleBlock}>
+        <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>{item.title}</AppText>
+        <AppText style={[styles.planMeta, darkMode && styles.drawerMutedText]}>{item.detail}</AppText>
+      </View>
+      <AppText style={[styles.productIdeaPrice, darkMode && styles.textOnDark]}>{item.price}</AppText>
+    </View>
+  );
+}
+
+function FeatureCounter({
+  label,
+  value,
+  darkMode
+}: {
+  label: string;
+  value: string;
+  darkMode: boolean;
+}) {
+  return (
+    <View style={[styles.featureCounter, darkMode && styles.softSurfaceDark]}>
+      <AppText style={styles.featureCounterValue}>{value}</AppText>
+      <AppText style={[styles.featureCounterLabel, darkMode && styles.mutedOnDark]}>{label}</AppText>
+    </View>
+  );
+}
+
+function FeatureAction({
+  label,
+  onPress,
+  disabled = false,
+  darkMode
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  darkMode: boolean;
+}) {
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.featureActionButton, darkMode && styles.softSurfaceDark, disabled && styles.featureActionButtonDisabled]}
+    >
+      <AppText style={[styles.featureActionText, darkMode && styles.textOnDark]}>{label}</AppText>
+    </PressableScale>
+  );
+}
+
 function PlusFeature({
   darkMode,
-  icon,
   text
 }: {
   darkMode: boolean;
-  icon: keyof typeof Ionicons.glyphMap;
   text: string;
 }) {
   return (
     <View style={styles.plusFeature}>
-      <Ionicons name={icon} size={15} color={colors.accent} />
+      <View style={styles.featureBullet} />
       <AppText style={[styles.plusFeatureText, darkMode && styles.mutedOnDark]}>{text}</AppText>
     </View>
   );
@@ -2397,6 +2707,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#8B6AF2'
   },
+  plusHeroIconText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '900'
+  },
   plusHeroCopy: {
     flex: 1,
     minWidth: 0
@@ -2421,6 +2737,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7
   },
+  featureBullet: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.accent
+  },
   plusFeatureText: {
     flex: 1,
     color: colors.ink,
@@ -2442,6 +2764,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '800'
+  },
+  setupBadgeText: {
+    width: 20,
+    color: colors.accent,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  statusBadge: {
+    minWidth: 52,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    backgroundColor: colors.surfaceMuted
+  },
+  statusBadgeActive: {
+    backgroundColor: colors.success
+  },
+  statusBadgeText: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  statusBadgeTextActive: {
+    color: colors.onAccent
   },
   planCard: {
     gap: 10,
@@ -2481,6 +2831,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '900'
   },
+  tierBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    backgroundColor: colors.accentSoft
+  },
+  tierBadgeText: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'capitalize'
+  },
   planMeta: {
     marginTop: 3,
     color: colors.muted,
@@ -2499,6 +2861,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '700'
+  },
+  productIdeaCard: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceMuted
+  },
+  productIdeaPrice: {
+    color: colors.ink,
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'right'
   },
   planBuyButton: {
     minHeight: 40,
@@ -2749,6 +3127,45 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontWeight: '700'
   },
+  adminBanner: {
+    minHeight: 72,
+    borderRadius: 18,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#BFE8D0',
+    backgroundColor: '#EAF8F0'
+  },
+  adminBannerDark: {
+    borderColor: '#285B43',
+    backgroundColor: '#14231C'
+  },
+  adminIconBubble: {
+    width: 54,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.success
+  },
+  adminBannerCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  adminBannerTitle: {
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: '900'
+  },
+  adminBannerMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
   subscriptionBanner: {
     minHeight: 72,
     borderRadius: 18,
@@ -2799,6 +3216,112 @@ const styles = StyleSheet.create({
     fontSize: 20,
     lineHeight: 22,
     fontWeight: '900'
+  },
+  roadmapCard: {
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 14,
+    backgroundColor: colors.surface
+  },
+  roadmapTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    alignItems: 'flex-start'
+  },
+  roadmapTitle: {
+    color: colors.ink,
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: '900'
+  },
+  roadmapMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  verificationBadge: {
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  verificationBadgeVerified: {
+    backgroundColor: colors.success
+  },
+  verificationBadgeText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  verificationBadgeTextVerified: {
+    color: colors.onAccent
+  },
+  featureCounterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  featureCounter: {
+    width: '48%',
+    minHeight: 66,
+    borderRadius: 12,
+    padding: 10,
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  featureCounterValue: {
+    color: colors.accent,
+    fontSize: 19,
+    lineHeight: 23,
+    fontWeight: '900'
+  },
+  featureCounterLabel: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '800'
+  },
+  featureActionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  featureActionButton: {
+    minHeight: 38,
+    borderRadius: 19,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentSoft
+  },
+  featureActionButtonDisabled: {
+    opacity: 0.55
+  },
+  featureActionText: {
+    color: colors.accent,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '900'
+  },
+  profileStatusNote: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#EAF8F0'
+  },
+  profileStatusText: {
+    color: colors.ink,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
   },
   interestRow: {
     flexDirection: 'row',

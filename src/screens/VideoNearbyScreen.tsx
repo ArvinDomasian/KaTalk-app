@@ -16,6 +16,11 @@ import { PressableScale } from '../components/PressableScale';
 import { VideoCallStage } from '../components/VideoCallStage';
 import { appServices } from '../services/localAppServices';
 import {
+  normalizeUserEconomy,
+  spendDailyLike,
+  spendSuperLike
+} from '../services/userFeatureService';
+import {
   getAgoraSetupError,
   leaveLiveVideoMatch,
   recordLiveVideoSafety,
@@ -29,23 +34,29 @@ import type { Candidate, UserProfile } from '../types';
 type Props = {
   profile: UserProfile;
   darkMode?: boolean;
+  onProfileUpdate?: (profile: UserProfile) => void;
   onCallStateChange?: (active: boolean) => void;
 };
 
 type VideoState = 'idle' | 'searching' | 'matched' | 'calling';
+type MemberDecision = 'liked' | 'passed' | 'super_liked';
 
 export function VideoNearbyScreen({
   profile,
   darkMode = false,
+  onProfileUpdate,
   onCallStateChange
 }: Props) {
   const [videoState, setVideoState] = useState<VideoState>('idle');
   const [searchMessage, setSearchMessage] = useState('Looking for someone compatible');
   const [activeSession, setActiveSession] = useState<LiveVideoSession | null>(null);
   const [nearbyMembers, setNearbyMembers] = useState<Candidate[]>([]);
+  const [memberDecisions, setMemberDecisions] = useState<Record<string, MemberDecision>>({});
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const cancelSearchRef = useRef<(() => void) | null>(null);
   const matchedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFinishingRef = useRef(false);
+  const economy = normalizeUserEconomy(profile.economy);
 
   useEffect(() => {
     void refreshNearby();
@@ -252,6 +263,44 @@ export function VideoNearbyScreen({
     }
   }
 
+  function applyProfileAction(result: ReturnType<typeof spendDailyLike>) {
+    onProfileUpdate?.(result.profile);
+    setActionNotice(result.message);
+  }
+
+  function likeMember(member: Candidate) {
+    if (memberDecisions[member.id] === 'liked' || memberDecisions[member.id] === 'super_liked') {
+      setActionNotice(`${member.nickname} is already in your liked list.`);
+      return;
+    }
+
+    const result = spendDailyLike(profile, member.nickname);
+    applyProfileAction(result);
+
+    if (result.ok) {
+      setMemberDecisions((current) => ({ ...current, [member.id]: 'liked' }));
+    }
+  }
+
+  function passMember(member: Candidate) {
+    setMemberDecisions((current) => ({ ...current, [member.id]: 'passed' }));
+    setActionNotice(`${member.nickname} marked as passed.`);
+  }
+
+  function superLikeMember(member: Candidate) {
+    if (memberDecisions[member.id] === 'super_liked') {
+      setActionNotice(`${member.nickname} already has your Super Like.`);
+      return;
+    }
+
+    const result = spendSuperLike(profile, member.nickname);
+    applyProfileAction(result);
+
+    if (result.ok) {
+      setMemberDecisions((current) => ({ ...current, [member.id]: 'super_liked' }));
+    }
+  }
+
   if (videoState === 'calling' && activeSession) {
     return (
       <VideoCallStage
@@ -359,6 +408,28 @@ export function VideoNearbyScreen({
           </AppText>
         </View>
 
+        <View style={[styles.discoveryStatus, darkMode && styles.cardDark]}>
+          <View>
+            <AppText style={[styles.discoveryStatusTitle, darkMode && styles.textOnDark]}>
+              Discovery actions
+            </AppText>
+            <AppText style={[styles.discoveryStatusCopy, darkMode && styles.mutedOnDark]}>
+              {profile.subscription?.isActive
+                ? 'Membership active: likes are unlimited.'
+                : `${economy.dailyLikesRemaining} free likes left today.`}
+            </AppText>
+          </View>
+          <View style={styles.superLikePill}>
+            <AppText style={styles.superLikePillText}>{economy.superLikes} Super Likes</AppText>
+          </View>
+        </View>
+
+        {actionNotice ? (
+          <View style={[styles.actionNotice, darkMode && styles.softSurfaceDark]}>
+            <AppText style={[styles.actionNoticeText, darkMode && styles.textOnDark]}>{actionNotice}</AppText>
+          </View>
+        ) : null}
+
         <View style={styles.memberGrid}>
           {nearbyMembers.map((member) => (
             <View key={member.id} style={[styles.memberTile, darkMode && styles.cardDark]}>
@@ -396,6 +467,17 @@ export function VideoNearbyScreen({
                 <AppText style={[styles.memberName, darkMode && styles.textOnDark]}>
                   {member.nickname}, {member.age}
                 </AppText>
+                {memberDecisions[member.id] ? (
+                  <View style={styles.decisionBadge}>
+                    <AppText style={styles.decisionBadgeText}>
+                      {memberDecisions[member.id] === 'super_liked'
+                        ? 'Super'
+                        : memberDecisions[member.id] === 'liked'
+                          ? 'Liked'
+                          : 'Passed'}
+                    </AppText>
+                  </View>
+                ) : null}
                 <PressableScale
                   accessibilityRole="button"
                   accessibilityLabel={`View ${member.nickname}'s profile`}
@@ -407,6 +489,32 @@ export function VideoNearbyScreen({
                     size={16}
                     color={darkMode ? colors.onAccent : colors.ink}
                   />
+                </PressableScale>
+              </View>
+              <View style={styles.discoveryActions}>
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel={`Pass ${member.nickname}`}
+                  onPress={() => passMember(member)}
+                  style={[styles.discoveryActionButton, styles.passButton]}
+                >
+                  <AppText style={styles.passButtonText}>Pass</AppText>
+                </PressableScale>
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel={`Like ${member.nickname}`}
+                  onPress={() => likeMember(member)}
+                  style={[styles.discoveryActionButton, styles.likeButton]}
+                >
+                  <AppText style={styles.likeButtonText}>Like</AppText>
+                </PressableScale>
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel={`Super Like ${member.nickname}`}
+                  onPress={() => superLikeMember(member)}
+                  style={[styles.discoveryActionButton, styles.superButton]}
+                >
+                  <AppText style={styles.superButtonText}>Super</AppText>
                 </PressableScale>
               </View>
             </View>
@@ -537,6 +645,56 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 12
   },
+  discoveryStatus: {
+    minHeight: 70,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    backgroundColor: colors.surface
+  },
+  discoveryStatusTitle: {
+    color: colors.ink,
+    fontSize: 15,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  discoveryStatusCopy: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  superLikePill: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentSoft
+  },
+  superLikePillText: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  actionNotice: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#EAF8F0'
+  },
+  actionNoticeText: {
+    color: colors.ink,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
+  },
   memberGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -603,6 +761,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12
   },
+  decisionBadge: {
+    minHeight: 24,
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentSoft
+  },
+  decisionBadgeText: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: '900'
+  },
   profileButton: {
     width: 32,
     height: 32,
@@ -610,6 +781,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
+  },
+  discoveryActions: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingBottom: 10
+  },
+  discoveryActionButton: {
+    flex: 1,
+    minHeight: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  passButton: {
+    backgroundColor: colors.surfaceMuted
+  },
+  likeButton: {
+    backgroundColor: colors.accent
+  },
+  superButton: {
+    backgroundColor: '#8B6AF2'
+  },
+  passButtonText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  likeButtonText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  superButtonText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
   },
   matchingRoot: {
     flex: 1,

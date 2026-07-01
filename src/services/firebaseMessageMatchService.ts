@@ -22,6 +22,7 @@ import { candidates, openingMessages } from '../data/mockData';
 import type { Candidate, Message, UserProfile } from '../types';
 import type { MessageMatchSession } from './contracts';
 import { getConfiguredFirebaseApp, getCurrentFirebaseUserId } from './firebaseAuthService';
+import { submitSafetyReport } from './reportService';
 
 const LIVE_QUEUE_COLLECTION = 'liveMessageMatchQueue';
 const LIVE_MATCH_COLLECTION = 'liveMessageMatches';
@@ -570,6 +571,8 @@ export async function saveLiveMessageMatch(matchId: string) {
 export async function recordLiveMessageSafety(matchId: string, action: 'report' | 'block') {
   const db = getLiveDb();
   const currentUid = getCurrentFirebaseUserId();
+  let targetUserId = '';
+  let targetNickname = '';
 
   if (!db || !currentUid) {
     throw new Error('Live safety needs Firebase sign-in.');
@@ -587,6 +590,10 @@ export async function recordLiveMessageSafety(matchId: string, action: 'report' 
       ? (snapshot.data()?.participantIds as string[])
       : [];
     const otherUid = participantIds.find((id) => id !== currentUid);
+    const participantProfile = otherUid ? snapshot.data()?.participants?.[otherUid] : null;
+
+    targetUserId = otherUid ?? '';
+    targetNickname = String(participantProfile?.nickname ?? '');
 
     transaction.update(matchRef, {
       [action === 'report' ? 'reportedBy' : 'blockedBy']: arrayUnion(currentUid),
@@ -603,6 +610,18 @@ export async function recordLiveMessageSafety(matchId: string, action: 'report' 
       });
     }
   });
+
+  if (action === 'report' && targetUserId) {
+    await submitSafetyReport({
+      source: 'message_match',
+      action: 'report',
+      actorId: currentUid,
+      targetId: targetUserId,
+      targetNickname,
+      matchId,
+      reason: 'Reported from 2-minute message match'
+    });
+  }
 }
 
 export async function closeLiveMessageMatch(matchId: string, status: 'expired' | 'saved') {

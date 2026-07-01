@@ -7,9 +7,11 @@ import { MessageMatchScreen } from './src/screens/MessageMatchScreen';
 import { VoiceRoomsScreen } from './src/screens/VoiceRoomsScreen';
 import { VideoNearbyScreen } from './src/screens/VideoNearbyScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { AdminDashboardScreen } from './src/screens/AdminDashboardScreen';
 import { LoadingScreen } from './src/screens/LoadingScreen';
 import { AppText } from './src/components/AppText';
 import { PressableScale } from './src/components/PressableScale';
+import { subscribeAdminAccess } from './src/services/adminService';
 import { signOutCurrentUser } from './src/services/firebaseAuthService';
 import { saveFirebaseUserProfile } from './src/services/firebaseProfileService';
 import {
@@ -38,6 +40,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('message');
   const [isMessageChatting, setIsMessageChatting] = useState(false);
   const [isVideoCalling, setIsVideoCalling] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminDashboardVisible, setAdminDashboardVisible] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadStoredThemeMode());
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const darkMode = themeMode === 'dark';
@@ -49,6 +53,16 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!profile) {
+      setIsAdmin(false);
+      setAdminDashboardVisible(false);
+      return undefined;
+    }
+
+    return subscribeAdminAccess(setIsAdmin);
+  }, [profile?.id]);
 
   function completeRegistration(nextProfile: UserProfile) {
     saveStoredProfile(nextProfile);
@@ -74,6 +88,8 @@ export default function App() {
     setIsEnteringApp(false);
     setIsMessageChatting(false);
     setIsVideoCalling(false);
+    setIsAdmin(false);
+    setAdminDashboardVisible(false);
     clearStoredProfile();
 
     await Promise.all([
@@ -122,6 +138,15 @@ export default function App() {
       return <RegistrationScreen onComplete={completeRegistration} />;
     }
 
+    if (adminDashboardVisible) {
+      return (
+        <AdminDashboardScreen
+          darkMode={darkMode}
+          onClose={() => setAdminDashboardVisible(false)}
+        />
+      );
+    }
+
     if (activeTab === 'message') {
       return (
         <MessageMatchScreen
@@ -141,6 +166,7 @@ export default function App() {
         <VideoNearbyScreen
           profile={profile}
           darkMode={darkMode}
+          onProfileUpdate={updateProfile}
           onCallStateChange={setIsVideoCalling}
         />
       );
@@ -151,11 +177,13 @@ export default function App() {
         profile={profile}
         darkMode={darkMode}
         onDarkModeChange={updateThemeMode}
+        isAdmin={isAdmin}
+        onOpenAdminDashboard={() => setAdminDashboardVisible(true)}
         onLogout={logOut}
         onProfileUpdate={updateProfile}
       />
     );
-  }, [activeTab, darkMode, isEnteringApp, isLoggingOut, profile]);
+  }, [activeTab, adminDashboardVisible, darkMode, isAdmin, isEnteringApp, isLoggingOut, profile]);
 
   useEffect(() => {
     if (activeTab !== 'message') {
@@ -165,6 +193,7 @@ export default function App() {
 
   const shouldShowTabs = Boolean(
     profile && !isEnteringApp && !isLoggingOut && !isMessageChatting && !isVideoCalling
+      && !adminDashboardVisible
   );
 
   return (

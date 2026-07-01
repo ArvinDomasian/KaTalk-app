@@ -1,5 +1,6 @@
 import { candidates, openingMessages, rooms } from '../data/mockData';
 import type { AppServices, SafetyEvent, SavedMatch } from './contracts';
+import { submitSafetyReport } from './reportService';
 
 function pickRandom<T>(items: T[]) {
   if (items.length === 0) {
@@ -95,6 +96,7 @@ export const appServices: AppServices = {
         createdAt: new Date()
       };
       safetyEvents.push(fullEvent);
+      void submitSafetyReport(event).catch(() => undefined);
       return fullEvent;
     }
   }
