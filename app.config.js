@@ -71,6 +71,11 @@ module.exports = () => {
     },
     extra: {
       ...appJson.expo.extra,
+      backendProvider: clean(process.env.EXPO_PUBLIC_BACKEND_PROVIDER) || 'firebase',
+      supabase: {
+        url: clean(process.env.EXPO_PUBLIC_SUPABASE_URL),
+        anonKey: clean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY)
+      },
       firebase: {
         apiKey: clean(process.env.EXPO_PUBLIC_FIREBASE_API_KEY) || firebaseFallbackConfig.apiKey,
         authDomain: clean(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN) || firebaseFallbackConfig.authDomain,

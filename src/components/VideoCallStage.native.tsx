@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   StyleSheet,
   View,
   type ViewStyle
@@ -16,6 +15,7 @@ import type {
   IRtcEngineEventHandler
 } from 'react-native-agora';
 import { AppText } from './AppText';
+import { MemberAvatar } from './MemberAvatar';
 import { PressableScale } from './PressableScale';
 import {
   getAgoraJoinCredentials,
@@ -277,7 +277,13 @@ export function VideoCallStage({
           />
         ) : (
           <View style={styles.remoteFallback}>
-            <Image source={{ uri: session.candidate.photoUrl }} style={styles.remoteAvatar} />
+            <MemberAvatar
+              name={session.candidate.nickname}
+              photoUrl={session.candidate.photoUrl}
+              color={session.candidate.avatarColor}
+              size={112}
+              borderColor="rgba(255,255,255,0.75)"
+            />
             <AppText style={styles.remoteName}>{session.candidate.nickname}</AppText>
             <AppText style={styles.remoteHint}>
               {remoteUid === null ? 'Waiting for the other person to join' : 'Camera is off'}

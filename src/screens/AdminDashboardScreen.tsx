@@ -121,7 +121,7 @@ export function AdminDashboardScreen({ darkMode, onClose }: Props) {
         </View>
         <AppText style={[styles.centerTitle, darkMode && styles.textOnDark]}>Admin access only</AppText>
         <AppText style={[styles.centerCopy, darkMode && styles.mutedOnDark]}>
-          This dashboard is hidden unless your Firebase account is listed as an admin.
+          This dashboard is hidden unless your account is listed as an admin.
         </AppText>
         <PressableScale accessibilityRole="button" onPress={onClose} style={styles.backButton}>
           <AppText style={styles.backButtonText}>Back to app</AppText>

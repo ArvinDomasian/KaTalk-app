@@ -1,5 +1,9 @@
-import { candidates, openingMessages, rooms } from '../data/mockData';
+import { openingMessages } from '../data/mockData';
 import type { AppServices, SafetyEvent, SavedMatch } from './contracts';
+import {
+  listRegisteredMemberCandidates,
+  listRegisteredVoiceRooms
+} from './registeredUserService';
 import { submitSafetyReport } from './reportService';
 
 function pickRandom<T>(items: T[]) {
@@ -13,13 +17,14 @@ function pickRandom<T>(items: T[]) {
 export const safetyEvents: SafetyEvent[] = [];
 export const savedMatches: SavedMatch[] = [];
 
-function visibleCandidatesFor(userId: string) {
+async function visibleCandidatesFor(profile: Parameters<AppServices['nearby']['list']>[0]) {
   const blockedIds = new Set(
     safetyEvents
-      .filter((event) => event.actorId === userId && event.action === 'block')
+      .filter((event) => event.actorId === profile.id && event.action === 'block')
       .map((event) => event.targetId)
   );
-  return candidates.filter((candidate) => !blockedIds.has(candidate.id));
+  const registeredCandidates = await listRegisteredMemberCandidates(profile);
+  return registeredCandidates.filter((candidate) => !blockedIds.has(candidate.id));
 }
 
 export const appServices: AppServices = {
@@ -27,7 +32,7 @@ export const appServices: AppServices = {
     async start(profile) {
       const startsAt = new Date();
       const durationSeconds = 120;
-      const candidate = pickRandom(visibleCandidatesFor(profile.id));
+      const candidate = pickRandom(await visibleCandidatesFor(profile));
 
       return {
         id: `message-match-${startsAt.getTime()}`,
@@ -64,20 +69,19 @@ export const appServices: AppServices = {
     }
   },
   rooms: {
-    async list() {
-      return rooms.map((room) => ({ ...room }));
+    async list(profile) {
+      return listRegisteredVoiceRooms(profile);
     }
   },
   nearby: {
     async list(profile) {
-      return visibleCandidatesFor(profile.id)
-        .slice()
+      return (await visibleCandidatesFor(profile))
         .sort((left, right) => left.distanceMiles - right.distanceMiles);
     }
   },
   video: {
     async start(profile) {
-      const candidate = pickRandom(visibleCandidatesFor(profile.id));
+      const candidate = pickRandom(await visibleCandidatesFor(profile));
       const sessionId = `video-${Date.now()}`;
 
       return {

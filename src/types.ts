@@ -81,11 +81,12 @@ export type Candidate = {
   interests: string[];
   prompt: string;
   avatarColor: string;
-  photoUrl: string;
+  photoUrl?: string;
 };
 
 export type VoiceRoom = {
   id: string;
+  hostId?: string;
   title: string;
   mood: string;
   topic: string;

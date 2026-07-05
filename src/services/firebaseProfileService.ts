@@ -1,6 +1,7 @@
 import { doc, getDoc, getFirestore, serverTimestamp, setDoc } from 'firebase/firestore';
 import type { UserProfile } from '../types';
 import { getConfiguredFirebaseApp, getCurrentFirebaseUserId } from './firebaseAuthService';
+import { publishRegisteredUserProfile } from './registeredUserService';
 
 const USER_PROFILE_COLLECTION = 'userProfiles';
 const PROFILE_LOAD_TIMEOUT_ERROR = 'KATALK_PROFILE_LOAD_TIMEOUT';
@@ -57,6 +58,7 @@ export async function saveFirebaseUserProfile(profile: UserProfile) {
     },
     { merge: true }
   );
+  await publishRegisteredUserProfile(profile);
 }
 
 export async function loadCurrentFirebaseUserProfile(timeoutMs = 6000) {

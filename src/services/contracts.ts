@@ -42,7 +42,7 @@ export type AppServices = {
     save(profile: UserProfile, candidate: Candidate): Promise<SavedMatch>;
   };
   rooms: {
-    list(): Promise<VoiceRoom[]>;
+    list(profile: UserProfile): Promise<VoiceRoom[]>;
   };
   nearby: {
     list(profile: UserProfile): Promise<Candidate[]>;

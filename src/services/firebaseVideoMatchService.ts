@@ -16,13 +16,22 @@ import {
   type Firestore,
   type Unsubscribe
 } from 'firebase/firestore';
-import { candidates } from '../data/mockData';
 import type { Candidate, UserProfile } from '../types';
+import { shouldUseSupabase } from './backendConfig';
 import {
   getConfiguredFirebaseApp,
   getCurrentFirebaseIdToken,
   getCurrentFirebaseUserId
 } from './firebaseAuthService';
+import {
+  LIVE_BLOCK_COLLECTION,
+  LIVE_PROFILE_COLLECTION,
+  blockedUserIdsFor,
+  candidateFromPublicProfile,
+  profilesAreCompatible,
+  publicProfileFromUserProfile,
+  type PublicMemberProfile
+} from './registeredUserService';
 import { submitSafetyReport } from './reportService';
 
 declare const process: {
@@ -31,22 +40,7 @@ declare const process: {
 
 const VIDEO_QUEUE_COLLECTION = 'liveVideoMatchQueue';
 const VIDEO_MATCH_COLLECTION = 'liveVideoMatches';
-const LIVE_PROFILE_COLLECTION = 'liveProfiles';
-const LIVE_BLOCK_COLLECTION = 'liveBlocks';
 const QUEUE_STALE_MS = 3 * 60 * 1000;
-
-type PublicProfile = {
-  uid: string;
-  nickname: string;
-  dateOfBirth: string;
-  gender: string;
-  preference: string;
-  ageRange: string;
-  interests: string[];
-  comfort: UserProfile['comfort'];
-  prompt: string;
-  photoUrl: string;
-};
 
 export type LiveVideoSession = {
   id: string;
@@ -84,111 +78,6 @@ function pickRandom<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function parseAgeRange(ageRange: string) {
-  const [min, max] = ageRange.split('-').map((value) => Number(value.trim()));
-
-  return {
-    min: Number.isFinite(min) ? min : 18,
-    max: Number.isFinite(max) ? max : 99
-  };
-}
-
-function ageFromDateOfBirth(dateOfBirth: string) {
-  const birthDate = new Date(dateOfBirth);
-
-  if (Number.isNaN(birthDate.getTime())) {
-    return 25;
-  }
-
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const birthdayPassed =
-    today.getMonth() > birthDate.getMonth() ||
-    (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
-
-  if (!birthdayPassed) {
-    age -= 1;
-  }
-
-  return Math.max(18, age);
-}
-
-function publicProfileFor(profile: UserProfile, uid: string): PublicProfile {
-  const fallbackCandidate = candidates[uid.length % candidates.length];
-  const interests = profile.interests.length > 0 ? profile.interests : ['Quiet conversations'];
-
-  return {
-    uid,
-    nickname: profile.nickname,
-    dateOfBirth: profile.dateOfBirth,
-    gender: profile.gender,
-    preference: profile.preference,
-    ageRange: profile.ageRange,
-    interests,
-    comfort: profile.comfort,
-    prompt: `Likes ${interests.slice(0, 2).join(' and ')}.`,
-    photoUrl: profile.avatarUrl ?? fallbackCandidate.photoUrl
-  };
-}
-
-function candidateFromPublicProfile(profile: PublicProfile): Candidate {
-  const fallbackCandidate = candidates[profile.uid.length % candidates.length];
-
-  return {
-    id: profile.uid,
-    nickname: profile.nickname || 'KaTalk member',
-    age: ageFromDateOfBirth(profile.dateOfBirth),
-    distanceMiles: 0,
-    interests: profile.interests,
-    prompt: profile.prompt,
-    avatarColor: fallbackCandidate.avatarColor,
-    photoUrl: profile.photoUrl || fallbackCandidate.photoUrl
-  };
-}
-
-function preferenceAllowsGender(preference: string, gender: string) {
-  const normalizedPreference = preference.toLowerCase();
-  const normalizedGender = gender.toLowerCase();
-
-  if (
-    normalizedPreference.includes('everyone') ||
-    normalizedPreference.includes('exploring') ||
-    normalizedGender.includes('prefer not')
-  ) {
-    return true;
-  }
-
-  if (normalizedPreference.includes('women')) {
-    return normalizedGender.includes('woman');
-  }
-
-  if (normalizedPreference.includes('men')) {
-    return normalizedGender.includes('man');
-  }
-
-  if (normalizedPreference.includes('non-binary')) {
-    return normalizedGender.includes('non-binary');
-  }
-
-  return true;
-}
-
-function profilesAreCompatible(current: PublicProfile, other: PublicProfile) {
-  const currentAgeRange = parseAgeRange(current.ageRange);
-  const otherAgeRange = parseAgeRange(other.ageRange);
-  const currentAge = ageFromDateOfBirth(current.dateOfBirth);
-  const otherAge = ageFromDateOfBirth(other.dateOfBirth);
-
-  return (
-    otherAge >= currentAgeRange.min &&
-    otherAge <= currentAgeRange.max &&
-    currentAge >= otherAgeRange.min &&
-    currentAge <= otherAgeRange.max &&
-    preferenceAllowsGender(current.preference, other.gender) &&
-    preferenceAllowsGender(other.preference, current.gender)
-  );
-}
-
 function videoMatchErrorMessage(error: unknown) {
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
 
@@ -207,7 +96,7 @@ function videoMatchErrorMessage(error: unknown) {
   return code ? `Video matching failed because Firebase returned ${code}.` : 'Video matching could not start.';
 }
 
-async function upsertLiveProfile(db: Firestore, publicProfile: PublicProfile) {
+async function upsertLiveProfile(db: Firestore, publicProfile: PublicMemberProfile) {
   await setDoc(
     doc(db, LIVE_PROFILE_COLLECTION, publicProfile.uid),
     {
@@ -216,31 +105,6 @@ async function upsertLiveProfile(db: Firestore, publicProfile: PublicProfile) {
     },
     { merge: true }
   );
-}
-
-async function blockedUserIdsFor(db: Firestore, currentUid: string) {
-  const blockedIds = new Set<string>();
-  const [blockedByMe, blockingMe] = await Promise.all([
-    getDocs(query(collection(db, LIVE_BLOCK_COLLECTION), where('blockerId', '==', currentUid), limit(100))),
-    getDocs(query(collection(db, LIVE_BLOCK_COLLECTION), where('blockedId', '==', currentUid), limit(100)))
-  ]);
-
-  blockedByMe.docs.forEach((item) => {
-    const blockedId = String(item.data().blockedId ?? '');
-
-    if (blockedId) {
-      blockedIds.add(blockedId);
-    }
-  });
-  blockingMe.docs.forEach((item) => {
-    const blockerId = String(item.data().blockerId ?? '');
-
-    if (blockerId) {
-      blockedIds.add(blockerId);
-    }
-  });
-
-  return blockedIds;
 }
 
 async function sessionFromMatch(db: Firestore, matchId: string, currentUid: string) {
@@ -261,7 +125,7 @@ async function sessionFromMatch(db: Firestore, matchId: string, currentUid: stri
 
   return {
     id: matchId,
-    candidate: candidateFromPublicProfile(participantProfile as PublicProfile),
+    candidate: candidateFromPublicProfile(participantProfile as PublicMemberProfile),
     agoraChannelName: String(data.agoraChannelName ?? `katalk-video-${matchId}`)
   };
 }
@@ -269,7 +133,7 @@ async function sessionFromMatch(db: Firestore, matchId: string, currentUid: stri
 async function tryClaimWaitingUser(
   db: Firestore,
   currentUid: string,
-  publicProfile: PublicProfile,
+  publicProfile: PublicMemberProfile,
   blockedIds: Set<string>
 ) {
   const waitingSnapshot = await getDocs(
@@ -278,7 +142,7 @@ async function tryClaimWaitingUser(
   const cutoffMs = Date.now() - QUEUE_STALE_MS;
   const eligibleQueueDocs = waitingSnapshot.docs.filter((item) => {
     const data = item.data();
-    const otherProfile = data.publicProfile as PublicProfile | undefined;
+    const otherProfile = data.publicProfile as PublicMemberProfile | undefined;
 
     return (
       item.id !== currentUid &&
@@ -286,7 +150,7 @@ async function tryClaimWaitingUser(
       Number(data.createdAtMs ?? 0) >= cutoffMs &&
       Boolean(otherProfile?.uid) &&
       !blockedIds.has(String(otherProfile?.uid)) &&
-      profilesAreCompatible(publicProfile, otherProfile as PublicProfile)
+      profilesAreCompatible(publicProfile, otherProfile as PublicMemberProfile)
     );
   });
   const otherQueueDoc = eligibleQueueDocs.length > 0 ? pickRandom(eligibleQueueDocs) : null;
@@ -307,7 +171,7 @@ async function tryClaimWaitingUser(
     }
 
     const otherQueue = otherQueueSnapshot.data();
-    const otherProfile = otherQueue.publicProfile as PublicProfile;
+    const otherProfile = otherQueue.publicProfile as PublicMemberProfile;
 
     if (
       otherQueue.status !== 'waiting' ||
@@ -355,6 +219,24 @@ async function tryClaimWaitingUser(
 }
 
 export function startLiveVideoMatching(profile: UserProfile, callbacks: VideoMatchCallbacks) {
+  if (shouldUseSupabase()) {
+    let unsubscribe: () => void = () => undefined;
+    let disposed = false;
+
+    void import('./supabaseVideoMatchService').then(({ startSupabaseVideoMatching }) => {
+      if (disposed) {
+        return;
+      }
+
+      unsubscribe = startSupabaseVideoMatching(profile, callbacks);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }
+
   const db = getVideoDb();
   const currentUid = getCurrentFirebaseUserId() ?? profile.id;
   let queueUnsubscribe: Unsubscribe | null = null;
@@ -366,7 +248,7 @@ export function startLiveVideoMatching(profile: UserProfile, callbacks: VideoMat
     return () => undefined;
   }
 
-  const publicProfile = publicProfileFor(profile, currentUid);
+  const publicProfile = publicProfileFromUserProfile(profile, currentUid);
   const queueRef = doc(db, VIDEO_QUEUE_COLLECTION, currentUid);
 
   async function waitForMatch() {
@@ -455,6 +337,24 @@ export function subscribeLiveVideoMatchState(
   onState: (state: LiveVideoMatchState) => void,
   onError: (message: string) => void
 ) {
+  if (shouldUseSupabase()) {
+    let unsubscribe: () => void = () => undefined;
+    let disposed = false;
+
+    void import('./supabaseVideoMatchService').then(({ subscribeSupabaseLiveVideoMatchState }) => {
+      if (disposed) {
+        return;
+      }
+
+      unsubscribe = subscribeSupabaseLiveVideoMatchState(matchId, onState, onError);
+    });
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }
+
   const db = getVideoDb();
 
   if (!db) {
@@ -481,6 +381,11 @@ export function subscribeLiveVideoMatchState(
 }
 
 export async function leaveLiveVideoMatch(matchId: string) {
+  if (shouldUseSupabase()) {
+    const { leaveSupabaseLiveVideoMatch } = await import('./supabaseVideoMatchService');
+    return leaveSupabaseLiveVideoMatch(matchId);
+  }
+
   const db = getVideoDb();
   const currentUid = getCurrentFirebaseUserId();
 
@@ -497,6 +402,11 @@ export async function leaveLiveVideoMatch(matchId: string) {
 }
 
 export async function recordLiveVideoSafety(matchId: string, action: 'report' | 'block') {
+  if (shouldUseSupabase()) {
+    const { recordSupabaseLiveVideoSafety } = await import('./supabaseVideoMatchService');
+    return recordSupabaseLiveVideoSafety(matchId, action);
+  }
+
   const db = getVideoDb();
   const currentUid = getCurrentFirebaseUserId();
   let targetUserId = '';
@@ -572,6 +482,11 @@ export function getAgoraSetupError() {
 }
 
 export async function getAgoraJoinCredentials(channelName: string) {
+  if (shouldUseSupabase()) {
+    const { getSupabaseAgoraJoinCredentials } = await import('./supabaseVideoMatchService');
+    return getSupabaseAgoraJoinCredentials(channelName);
+  }
+
   const appId = cleanEnvValue(process.env.EXPO_PUBLIC_AGORA_APP_ID);
   const tokenEndpoint = cleanEnvValue(process.env.EXPO_PUBLIC_AGORA_TOKEN_ENDPOINT);
   const currentUid = getCurrentFirebaseUserId();

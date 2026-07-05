@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ImageBackground,
   Platform,
   ScrollView,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
+import { MemberAvatar } from '../components/MemberAvatar';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
 import { VideoCallStage } from '../components/VideoCallStage';
@@ -51,6 +51,8 @@ export function VideoNearbyScreen({
   const [searchMessage, setSearchMessage] = useState('Looking for someone compatible');
   const [activeSession, setActiveSession] = useState<LiveVideoSession | null>(null);
   const [nearbyMembers, setNearbyMembers] = useState<Candidate[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [memberLoadNotice, setMemberLoadNotice] = useState<string | null>(null);
   const [memberDecisions, setMemberDecisions] = useState<Record<string, MemberDecision>>({});
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const cancelSearchRef = useRef<(() => void) | null>(null);
@@ -106,8 +108,18 @@ export function VideoNearbyScreen({
   }, [onCallStateChange]);
 
   async function refreshNearby() {
-    const members = await appServices.nearby.list(profile);
-    setNearbyMembers(members);
+    setIsLoadingMembers(true);
+    setMemberLoadNotice(null);
+
+    try {
+      const members = await appServices.nearby.list(profile);
+      setNearbyMembers(members);
+    } catch {
+      setNearbyMembers([]);
+      setMemberLoadNotice('Registered members could not load yet. Check your backend setup and connection.');
+    } finally {
+      setIsLoadingMembers(false);
+    }
   }
 
   function resetVideoState() {
@@ -347,7 +359,13 @@ export function VideoNearbyScreen({
     return (
       <View style={[styles.matchingRoot, darkMode && styles.rootDark]}>
         <View style={styles.matchedAvatarFrame}>
-          <Image source={{ uri: activeSession.candidate.photoUrl }} style={styles.matchedAvatar} />
+          <MemberAvatar
+            name={activeSession.candidate.nickname}
+            photoUrl={activeSession.candidate.photoUrl}
+            color={activeSession.candidate.avatarColor}
+            size={142}
+            borderColor={colors.accent}
+          />
           <View style={styles.matchedBadge}>
             <Ionicons name="checkmark" size={20} color={colors.onAccent} />
           </View>
@@ -402,7 +420,7 @@ export function VideoNearbyScreen({
         </View>
 
         <View style={styles.sectionHeader}>
-          <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>Nearby members</AppText>
+          <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>Registered members</AppText>
           <AppText style={[styles.sectionCopy, darkMode && styles.mutedOnDark]}>
             Profiles only. This tab has no chat requests.
           </AppText>
@@ -431,38 +449,52 @@ export function VideoNearbyScreen({
         ) : null}
 
         <View style={styles.memberGrid}>
+          {isLoadingMembers ? (
+            <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
+              <ActivityIndicator size="small" color={colors.accent} />
+              <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
+                Loading real registered members...
+              </AppText>
+            </View>
+          ) : null}
+          {!isLoadingMembers && memberLoadNotice ? (
+            <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
+              <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
+                {memberLoadNotice}
+              </AppText>
+            </View>
+          ) : null}
+          {!isLoadingMembers && !memberLoadNotice && nearbyMembers.length === 0 ? (
+            <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
+              <AppText style={[styles.emptyTitle, darkMode && styles.textOnDark]}>
+                No registered members yet
+              </AppText>
+              <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
+                Real profiles will appear here after other users register and complete their profile.
+              </AppText>
+            </View>
+          ) : null}
           {nearbyMembers.map((member) => (
             <View key={member.id} style={[styles.memberTile, darkMode && styles.cardDark]}>
-              <ImageBackground
-                source={{ uri: member.photoUrl }}
-                imageStyle={styles.memberImage}
-                style={styles.memberPhoto}
-              >
-                <View style={styles.distanceBadge}>
-                  <AppText style={styles.distanceBadgeText}>
-                    {member.distanceMiles.toFixed(1)} Km
-                  </AppText>
+              {member.photoUrl ? (
+                <ImageBackground
+                  source={{ uri: member.photoUrl }}
+                  imageStyle={styles.memberImage}
+                  style={styles.memberPhoto}
+                >
+                  <MemberPhotoOverlay member={member} onReport={() => handleNearbySafety('report', member)} onBlock={() => handleNearbySafety('block', member)} />
+                </ImageBackground>
+              ) : (
+                <View style={[styles.memberPhoto, styles.memberPhotoFallback]}>
+                  <MemberPhotoOverlay member={member} onReport={() => handleNearbySafety('report', member)} onBlock={() => handleNearbySafety('block', member)} />
+                  <MemberAvatar
+                    name={member.nickname}
+                    color={member.avatarColor}
+                    size={78}
+                    borderColor="rgba(255,255,255,0.72)"
+                  />
                 </View>
-                <View style={styles.photoActions}>
-                  <PressableScale
-                    accessibilityRole="button"
-                    accessibilityLabel={`Report ${member.nickname}`}
-                    onPress={() => handleNearbySafety('report', member)}
-                    style={styles.photoIcon}
-                  >
-                    <Ionicons name="flag" size={15} color={colors.onAccent} />
-                  </PressableScale>
-                  <PressableScale
-                    accessibilityRole="button"
-                    accessibilityLabel={`Block ${member.nickname}`}
-                    onPress={() => handleNearbySafety('block', member)}
-                    style={styles.photoIcon}
-                  >
-                    <Ionicons name="ban" size={15} color={colors.onAccent} />
-                  </PressableScale>
-                </View>
-                <AppText style={styles.photoLocation}>Near your area</AppText>
-              </ImageBackground>
+              )}
               <View style={styles.memberCaption}>
                 <AppText style={[styles.memberName, darkMode && styles.textOnDark]}>
                   {member.nickname}, {member.age}
@@ -537,6 +569,45 @@ function SafetyItem({
       <Ionicons name={icon} size={16} color={colors.accent} />
       <AppText style={styles.safetyLabel}>{label}</AppText>
     </View>
+  );
+}
+
+function MemberPhotoOverlay({
+  member,
+  onReport,
+  onBlock
+}: {
+  member: Candidate;
+  onReport: () => void;
+  onBlock: () => void;
+}) {
+  return (
+    <>
+      <View style={styles.distanceBadge}>
+        <AppText style={styles.distanceBadgeText}>
+          {member.distanceMiles > 0 ? `${member.distanceMiles.toFixed(1)} Km` : 'Registered'}
+        </AppText>
+      </View>
+      <View style={styles.photoActions}>
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel={`Report ${member.nickname}`}
+          onPress={onReport}
+          style={styles.photoIcon}
+        >
+          <Ionicons name="flag" size={15} color={colors.onAccent} />
+        </PressableScale>
+        <PressableScale
+          accessibilityRole="button"
+          accessibilityLabel={`Block ${member.nickname}`}
+          onPress={onBlock}
+          style={styles.photoIcon}
+        >
+          <Ionicons name="ban" size={15} color={colors.onAccent} />
+        </PressableScale>
+      </View>
+      <AppText style={styles.photoLocation}>Registered member</AppText>
+    </>
   );
 }
 
@@ -700,6 +771,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12
   },
+  fullWidthEmpty: {
+    width: '100%',
+    minHeight: 122,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: colors.surface
+  },
+  emptyTitle: {
+    color: colors.ink,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  emptyText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
   memberTile: {
     width: '48%',
     borderRadius: 8,
@@ -712,6 +807,11 @@ const styles = StyleSheet.create({
     height: 180,
     padding: 8,
     justifyContent: 'space-between'
+  },
+  memberPhotoFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DDEBFA'
   },
   memberImage: {
     borderTopLeftRadius: 8,

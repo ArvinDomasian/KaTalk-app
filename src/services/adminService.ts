@@ -11,6 +11,8 @@ import {
   type Unsubscribe
 } from 'firebase/firestore';
 import type { ProfileVerificationStatus, UserModeration } from '../types';
+import { getCurrentAuthUserId, subscribeAuthUser } from './authService';
+import { shouldUseSupabase } from './backendConfig';
 import {
   getConfiguredFirebaseApp,
   getCurrentFirebaseUserId,
@@ -118,6 +120,40 @@ function userFromDoc(id: string, data: Record<string, unknown>): AdminUser {
   };
 }
 
+function reportFromSupabaseRow(row: Record<string, unknown>): AdminReport {
+  const targetUserId = String(row.target_user_id ?? row.target_id ?? '');
+
+  return {
+    id: String(row.id ?? ''),
+    source: String(row.source ?? 'report'),
+    reporterId: String(row.reporter_id ?? row.actor_id ?? ''),
+    targetUserId,
+    targetNickname: String(row.target_nickname ?? (targetUserId || 'Unknown user')),
+    reason: String(row.reason ?? 'User report'),
+    status: String(row.status ?? 'open') as AdminReportStatus,
+    createdAtMs: Number(row.created_at_ms ?? 0)
+  };
+}
+
+function userFromSupabaseRow(row: Record<string, unknown>): AdminUser {
+  const moderation = (row.moderation ?? {}) as Partial<UserModeration>;
+  const verification = (row.verification ?? {}) as { status?: ProfileVerificationStatus };
+  const interests = Array.isArray(row.interests) ? row.interests.map(String) : [];
+
+  return {
+    id: String(row.id ?? ''),
+    nickname: String(row.nickname ?? 'KaTalk member'),
+    authContact: String(row.auth_contact ?? ''),
+    gender: String(row.gender ?? 'Not set'),
+    preference: String(row.preference ?? 'Not set'),
+    interests,
+    updatedAtMs: Number(row.updated_at_ms ?? 0),
+    verificationStatus: verification.status ?? 'not_started',
+    isBanned: moderation.isBanned === true,
+    banReason: moderation.reason
+  };
+}
+
 function makeStats(reports: AdminReport[], users: AdminUser[]): AdminStats {
   const reportedUserIds = new Set(reports.map((report) => report.targetUserId).filter(Boolean));
 
@@ -142,6 +178,67 @@ function buildDashboardData(reports: AdminReport[], users: AdminUser[]): AdminDa
 }
 
 export function subscribeAdminAccess(onChange: (isAdmin: boolean) => void): Unsubscribe {
+  if (shouldUseSupabase()) {
+    let cleanup = () => undefined;
+    let disposed = false;
+    let activeUid: string | null = null;
+
+    void import('./supabaseClient').then(({ getSupabaseClient }) => {
+      if (disposed) {
+        return;
+      }
+
+      const supabase = getSupabaseClient();
+
+      if (!supabase) {
+        onChange(false);
+        return;
+      }
+
+      const supabaseClient = supabase;
+
+      async function checkAdmin(uid: string | null) {
+        activeUid = uid;
+
+        if (!uid) {
+          onChange(false);
+          return;
+        }
+
+        const { data, error } = await supabaseClient
+          .from('admins')
+          .select('disabled')
+          .eq('id', uid)
+          .maybeSingle();
+        const adminRow = data as { disabled?: boolean } | null;
+
+        if (!disposed && activeUid === uid) {
+          onChange(!error && Boolean(adminRow) && adminRow?.disabled !== true);
+        }
+      }
+
+      const authUnsubscribe = subscribeAuthUser((uid) => {
+        void checkAdmin(uid);
+      });
+      const channel = supabaseClient
+        .channel('admin-access')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => {
+          void checkAdmin(activeUid);
+        })
+        .subscribe();
+
+      cleanup = () => {
+        authUnsubscribe();
+        void supabaseClient.removeChannel(channel);
+      };
+    });
+
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }
+
   const db = getAdminDb();
 
   if (!db) {
@@ -180,6 +277,71 @@ export function subscribeAdminDashboard(
   onData: (data: AdminDashboardData) => void,
   onError: (message: string) => void
 ): Unsubscribe {
+  if (shouldUseSupabase()) {
+    let cleanup = () => undefined;
+    let disposed = false;
+
+    void import('./supabaseClient').then(({ getSupabaseClient }) => {
+      if (disposed) {
+        return;
+      }
+
+      const supabase = getSupabaseClient();
+
+      if (!supabase) {
+        onError('Admin dashboard needs Supabase sign-in.');
+        return;
+      }
+
+      const supabaseClient = supabase;
+
+      async function loadDashboard() {
+        const [reportsResult, usersResult] = await Promise.all([
+          supabaseClient.from('reports').select('*').order('created_at_ms', { ascending: false }).limit(100),
+          supabaseClient.from('profiles').select('*').limit(250)
+        ]);
+
+        if (reportsResult.error) {
+          onError(reportsResult.error.message || 'Admin reports could not load.');
+          return;
+        }
+
+        if (usersResult.error) {
+          onError(usersResult.error.message || 'Admin users could not load.');
+          return;
+        }
+
+        onData(
+          buildDashboardData(
+            ((reportsResult.data ?? []) as Record<string, unknown>[]).map(reportFromSupabaseRow),
+            ((usersResult.data ?? []) as Record<string, unknown>[]).map(userFromSupabaseRow)
+          )
+        );
+      }
+
+      void loadDashboard();
+
+      const channel = supabaseClient
+        .channel('admin-dashboard')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, () => {
+          void loadDashboard();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+          void loadDashboard();
+        })
+        .subscribe();
+
+      cleanup = () => {
+        void supabaseClient.removeChannel(channel);
+      };
+    });
+
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }
+
   const db = getAdminDb();
 
   if (!db) {
@@ -219,6 +381,36 @@ export function subscribeAdminDashboard(
 }
 
 export async function banAdminUser(userId: string, reason = 'Banned by admin') {
+  if (shouldUseSupabase()) {
+    const { getSupabaseClient } = await import('./supabaseClient');
+    const supabase = getSupabaseClient();
+    const adminId = getCurrentAuthUserId();
+
+    if (!supabase || !adminId) {
+      throw new Error('Admin action needs Supabase sign-in.');
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        moderation: {
+          isBanned: true,
+          reason,
+          bannedAt: new Date().toISOString(),
+          bannedBy: adminId
+        },
+        updated_at_ms: Date.now(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      throw new Error(error.message || 'Admin ban failed.');
+    }
+
+    return;
+  }
+
   const db = getAdminDb();
   const adminId = getCurrentFirebaseUserId();
 
@@ -242,6 +434,35 @@ export async function banAdminUser(userId: string, reason = 'Banned by admin') {
 }
 
 export async function unbanAdminUser(userId: string) {
+  if (shouldUseSupabase()) {
+    const { getSupabaseClient } = await import('./supabaseClient');
+    const supabase = getSupabaseClient();
+    const adminId = getCurrentAuthUserId();
+
+    if (!supabase || !adminId) {
+      throw new Error('Admin action needs Supabase sign-in.');
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        moderation: {
+          isBanned: false,
+          unbannedAt: new Date().toISOString(),
+          unbannedBy: adminId
+        },
+        updated_at_ms: Date.now(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      throw new Error(error.message || 'Admin unban failed.');
+    }
+
+    return;
+  }
+
   const db = getAdminDb();
   const adminId = getCurrentFirebaseUserId();
 
@@ -264,6 +485,37 @@ export async function unbanAdminUser(userId: string) {
 }
 
 export async function manuallyVerifyAdminUser(userId: string) {
+  if (shouldUseSupabase()) {
+    const { getSupabaseClient } = await import('./supabaseClient');
+    const supabase = getSupabaseClient();
+    const adminId = getCurrentAuthUserId();
+
+    if (!supabase || !adminId) {
+      throw new Error('Admin action needs Supabase sign-in.');
+    }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        verification: {
+          status: 'verified',
+          badgeVisible: true,
+          method: 'manual',
+          verifiedAt: new Date().toISOString(),
+          verifiedBy: adminId
+        },
+        updated_at_ms: Date.now(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      throw new Error(error.message || 'Admin verification failed.');
+    }
+
+    return;
+  }
+
   const db = getAdminDb();
   const adminId = getCurrentFirebaseUserId();
 

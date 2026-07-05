@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 import type { ProfilePost, UserProfile } from '../types';
+import { shouldUseSupabase, supabaseMissingConfigMessage } from './backendConfig';
 import { getConfiguredFirebaseApp } from './firebaseAuthService';
 
 const USER_PROFILE_COLLECTION = 'userProfiles';
@@ -180,6 +181,24 @@ function postFromSnapshot(id: string, data: Record<string, unknown>): ProfilePos
   };
 }
 
+function postFromSupabaseRow(row: Record<string, unknown>): ProfilePost {
+  const visibility = row.visibility === 'private' ? 'private' : 'public';
+
+  return {
+    id: String(row.id ?? ''),
+    profileId: String(row.profile_id ?? ''),
+    authorNickname: String(row.author_nickname ?? 'KaTalk member'),
+    body: String(row.body ?? ''),
+    photoUrl: row.photo_url ? String(row.photo_url) : undefined,
+    emoji: row.emoji ? String(row.emoji) : undefined,
+    voiceUrl: row.voice_url ? String(row.voice_url) : undefined,
+    musicUrl: row.music_url ? String(row.music_url) : undefined,
+    musicTitle: row.music_title ? String(row.music_title) : undefined,
+    visibility,
+    createdAt: new Date(typeof row.created_at_ms === 'number' ? row.created_at_ms : Date.now())
+  };
+}
+
 function postErrorMessage(error: unknown) {
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
 
@@ -204,6 +223,72 @@ export function subscribeProfilePosts(
     visibleLocalPostsFor(profileId)
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
   );
+
+  if (shouldUseSupabase()) {
+    let cleanup = () => undefined;
+    let disposed = false;
+
+    void import('./supabaseClient').then(({ getSupabaseClient }) => {
+      if (disposed) {
+        return;
+      }
+
+      const supabase = getSupabaseClient();
+
+      if (!supabase) {
+        onError(supabaseMissingConfigMessage());
+        return;
+      }
+
+      const supabaseClient = supabase;
+
+      async function loadSupabasePosts() {
+      const { data, error } = await supabaseClient
+        .from('profile_posts')
+        .select('*')
+        .order('created_at_ms', { ascending: false })
+        .limit(200);
+
+      if (error) {
+        onError(error.message || 'Supabase profile posts could not load.');
+        return;
+      }
+
+      const remotePosts = ((data ?? []) as Record<string, unknown>[])
+        .map(postFromSupabaseRow)
+        .filter((post) => post.visibility === 'public' || post.profileId === profileId);
+
+      remotePosts.forEach(upsertLocalPost);
+
+      const remotePostIds = new Set(remotePosts.map((post) => post.id));
+      const localOnlyPosts = visibleLocalPostsFor(profileId).filter((post) => !remotePostIds.has(post.id));
+
+      onPosts(
+        [...localOnlyPosts, ...remotePosts].sort(
+          (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
+        )
+      );
+      }
+
+      void loadSupabasePosts();
+
+      const channel = supabaseClient
+        .channel(`profile-posts-${profileId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'profile_posts' }, () => {
+          void loadSupabasePosts();
+        })
+        .subscribe();
+
+      cleanup = () => {
+        void supabaseClient.removeChannel(channel);
+      };
+    });
+
+    return (() => {
+      disposed = true;
+      cleanup();
+    }) as Unsubscribe;
+  }
 
   const postsCollection = profilePostsCollection();
 
@@ -289,6 +374,44 @@ export async function createProfilePost(
 
   upsertLocalPost(localPost);
 
+  if (shouldUseSupabase()) {
+    const { getSupabaseClient } = await import('./supabaseClient');
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return localPost;
+    }
+
+    void Promise.all([
+      supabase
+        .from('profiles')
+        .upsert({
+          id: profile.id,
+          nickname: profile.nickname,
+          interests: profile.interests,
+          updated_at_ms: Date.now(),
+          updated_at: new Date().toISOString()
+        }),
+      supabase.from('profile_posts').upsert({
+        id: postId,
+        profile_id: profile.id,
+        author_nickname: profile.nickname,
+        body: cleanBody,
+        photo_url: photoUrl || null,
+        emoji: emoji || null,
+        voice_url: voiceUrl || null,
+        music_url: musicUrl || null,
+        music_title: musicTitle || null,
+        visibility,
+        created_at_ms: createdAtMs,
+        created_at: new Date(createdAtMs).toISOString(),
+        updated_at: new Date(createdAtMs).toISOString()
+      })
+    ]).catch(() => undefined);
+
+    return localPost;
+  }
+
   if (!postsCollection) {
     return localPost;
   }
@@ -331,6 +454,25 @@ export function updateProfilePostBody(postId: string, body: string) {
 
   const db = getPostDb();
 
+  if (shouldUseSupabase()) {
+    void import('./supabaseClient').then(({ getSupabaseClient }) => {
+      const supabase = getSupabaseClient();
+
+      if (supabase) {
+        void supabase
+          .from('profile_posts')
+          .update({
+            body: cleanBody,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', postId)
+          .then(() => undefined, () => undefined);
+      }
+    });
+
+    return updatedPost;
+  }
+
   if (db) {
     void setDoc(
       doc(db, PROFILE_POST_COLLECTION, postId),
@@ -355,12 +497,32 @@ export function deleteProfilePost(postId: string) {
 
   const db = getPostDb();
 
+  if (shouldUseSupabase()) {
+    void import('./supabaseClient').then(({ getSupabaseClient }) => {
+      const supabase = getSupabaseClient();
+
+      if (supabase) {
+        void supabase
+          .from('profile_posts')
+          .delete()
+          .eq('id', postId)
+          .then(() => undefined, () => undefined);
+      }
+    });
+
+    return;
+  }
+
   if (db) {
     void deleteDoc(doc(db, PROFILE_POST_COLLECTION, postId)).catch(() => undefined);
   }
 }
 
 export async function uploadProfilePostPhoto(profileId: string, file: Blob) {
+  if (shouldUseSupabase()) {
+    return uploadSupabaseProfileFile('profile-posts', profileId, file);
+  }
+
   const storage = getPostStorage();
 
   if (!storage) {
@@ -375,6 +537,10 @@ export async function uploadProfilePostPhoto(profileId: string, file: Blob) {
 }
 
 export async function uploadProfileVoiceClip(profileId: string, file: Blob) {
+  if (shouldUseSupabase()) {
+    return uploadSupabaseProfileFile('profile-voice-posts', profileId, file);
+  }
+
   const storage = getPostStorage();
 
   if (!storage) {
@@ -389,6 +555,10 @@ export async function uploadProfileVoiceClip(profileId: string, file: Blob) {
 }
 
 export async function uploadProfileAvatar(profileId: string, file: Blob) {
+  if (shouldUseSupabase()) {
+    return uploadSupabaseProfileFile('profile-avatars', profileId, file);
+  }
+
   const storage = getPostStorage();
 
   if (!storage) {
@@ -400,6 +570,27 @@ export async function uploadProfileAvatar(profileId: string, file: Blob) {
 
   await uploadBytes(imageRef, file);
   return getDownloadURL(imageRef);
+}
+
+async function uploadSupabaseProfileFile(bucket: string, profileId: string, file: Blob) {
+  const { getSupabaseClient } = await import('./supabaseClient');
+  const supabase = getSupabaseClient();
+
+  if (!supabase) {
+    throw new Error(supabaseMissingConfigMessage());
+  }
+
+  const path = `${profileId}/${Date.now()}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, {
+    upsert: false
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Supabase Storage could not upload this file.');
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data.publicUrl;
 }
 
 export function profilePostErrorMessage(error: unknown) {

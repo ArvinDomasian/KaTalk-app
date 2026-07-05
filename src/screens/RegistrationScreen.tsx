@@ -8,13 +8,13 @@ import { PressableScale } from '../components/PressableScale';
 import { candidates } from '../data/mockData';
 import {
   confirmEmailVerification,
-  getCurrentFirebaseUserId,
+  getCurrentAuthUserId,
   resendEmailVerification,
   sendEmailPasswordReset,
   signInWithEmail,
   startEmailVerification
-} from '../services/firebaseAuthService';
-import { loadCurrentFirebaseUserProfile } from '../services/firebaseProfileService';
+} from '../services/authService';
+import { loadCurrentUserProfile } from '../services/profileService';
 import { colors } from '../theme';
 import type { UserProfile } from '../types';
 import { isAdult } from '../utils/age';
@@ -151,7 +151,7 @@ export function RegistrationScreen({ onComplete }: Props) {
     }
 
     onComplete({
-      id: getCurrentFirebaseUserId() ?? `local-${Date.now()}`,
+      id: getCurrentAuthUserId() ?? `local-${Date.now()}`,
       nickname: nickname.trim(),
       dateOfBirth,
       gender,
@@ -485,7 +485,7 @@ function WelcomeStartScreen({
     const nickname = result.displayName?.trim() || emailName || 'KaTalk member';
 
     return {
-      id: getCurrentFirebaseUserId() ?? `local-${Date.now()}`,
+      id: getCurrentAuthUserId() ?? `local-${Date.now()}`,
       nickname,
       dateOfBirth: '2000-01-01',
       gender: 'Prefer not to say',
@@ -503,7 +503,7 @@ function WelcomeStartScreen({
 
   async function handleSendVerification() {
     if (authMethod === 'phone') {
-      setVerificationStatus('Phone verification needs Firebase Phone Auth setup before real SMS codes can be sent.');
+      setVerificationStatus('Phone verification needs SMS auth setup before real SMS codes can be sent.');
       return;
     }
 
@@ -535,7 +535,7 @@ function WelcomeStartScreen({
       setVerificationStatus('Signed in. Loading your profile...');
 
       try {
-        const storedProfile = await loadCurrentFirebaseUserProfile(5000);
+        const storedProfile = await loadCurrentUserProfile(5000);
 
         if (storedProfile) {
           onLogin(storedProfile);
@@ -616,7 +616,7 @@ function WelcomeStartScreen({
         <AppText style={styles.welcomeCopy}>
           {authMethod
             ? authMethod === 'phone'
-              ? 'Real SMS verification needs Firebase Phone Auth setup before this method can go live.'
+              ? 'Real SMS verification needs SMS auth setup before this method can go live.'
               : 'Create a password, verify your Gmail, then use this same login next time.'
             : showLoginForm
             ? 'Use the Gmail and password you registered with. Verified users enter immediately.'

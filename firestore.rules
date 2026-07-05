@@ -133,6 +133,18 @@ service cloud.firestore {
         (signedIn() && resource.data.profileId == request.auth.uid && isNotBanned());
     }
 
+    match /publicStories/{storyId} {
+      allow read: if signedIn() &&
+        resource.data.expiresAtMs > request.time.toMillis();
+      allow create: if signedIn() &&
+        request.resource.data.authorId == request.auth.uid &&
+        request.resource.data.expiresAtMs > request.resource.data.createdAtMs &&
+        request.resource.data.expiresAtMs <= request.resource.data.createdAtMs + 86400000 &&
+        isNotBanned();
+      allow update, delete: if isAdmin() ||
+        (signedIn() && resource.data.authorId == request.auth.uid && isNotBanned());
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

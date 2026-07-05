@@ -13,9 +13,9 @@ import {
   View
 } from 'react-native';
 import { AppText } from '../components/AppText';
+import { MemberAvatar } from '../components/MemberAvatar';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
-import { candidates } from '../data/mockData';
 import type { MessageMatchSession, SavedMatch } from '../services/contracts';
 import {
   closeLiveMessageMatch,
@@ -27,6 +27,12 @@ import {
   subscribeLiveMessages
 } from '../services/firebaseMessageMatchService';
 import { appServices } from '../services/localAppServices';
+import {
+  createPublicStory,
+  subscribePublicStories,
+  storyErrorMessage,
+  type PublicStory
+} from '../services/storyService';
 import { colors } from '../theme';
 import type { Candidate, MatchStatus, Message, UserProfile } from '../types';
 import { formatTimer } from '../utils/age';
@@ -39,15 +45,6 @@ type Props = {
   profile: UserProfile;
   darkMode?: boolean;
   onChattingStateChange?: (isChatting: boolean) => void;
-};
-
-type StoryItem = {
-  id: string;
-  nickname: string;
-  photoUrl?: string;
-  text: string;
-  createdAt: Date;
-  mine?: boolean;
 };
 
 type InboxThread = {
@@ -73,40 +70,13 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
   const [matchWindowVisible, setMatchWindowVisible] = useState(false);
   const [matchWindowStage, setMatchWindowStage] = useState<'finding' | 'found' | 'none'>('finding');
   const [matchWindowCandidate, setMatchWindowCandidate] = useState<Candidate | null>(null);
-  const [stories, setStories] = useState<StoryItem[]>(() =>
-    candidates.map((item, index) => ({
-      id: `story-${item.id}`,
-      nickname: item.nickname,
-      photoUrl: item.photoUrl,
-      text:
-        index === 0
-          ? 'Coffee walk later. Keeping it calm today.'
-          : index === 1
-            ? 'Current mood: books, rain, and easy conversation.'
-            : index === 2
-              ? 'One small song has been stuck in my head all day.'
-              : 'Looking for a quiet weekend plan.',
-      createdAt: new Date(Date.now() - (index + 1) * 1000 * 60 * 18)
-    }))
-  );
+  const [stories, setStories] = useState<PublicStory[]>([]);
   const [storyComposerVisible, setStoryComposerVisible] = useState(false);
   const [storyDraft, setStoryDraft] = useState('');
-  const [activeStory, setActiveStory] = useState<StoryItem | null>(null);
-  const [inboxThreads, setInboxThreads] = useState<InboxThread[]>(() =>
-    candidates.map((item, index) => ({
-      id: `thread-${item.id}`,
-      candidate: item,
-      unread: index === 2,
-      messages: [
-        {
-          id: `thread-${item.id}-opener`,
-          sender: 'match',
-          body: item.prompt,
-          sentAt: new Date(Date.now() - (index + 1) * 1000 * 60 * 42)
-        }
-      ]
-    }))
-  );
+  const [activeStory, setActiveStory] = useState<PublicStory | null>(null);
+  const [inboxThreads, setInboxThreads] = useState<InboxThread[]>([]);
+  const [isLoadingMembers, setIsLoadingMembers] = useState(false);
+  const [memberLoadNotice, setMemberLoadNotice] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [inboxDraft, setInboxDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
@@ -127,7 +97,26 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
 
   useEffect(() => {
     void refreshSavedMatches();
+    void refreshRegisteredMembers();
   }, [profile.id]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePublicStories(
+      profile,
+      setStories,
+      (message) => setMemberLoadNotice(message)
+    );
+
+    return unsubscribe;
+  }, [profile.avatarUrl, profile.id, profile.nickname]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStories((current) => current.filter((story) => story.expiresAt.getTime() > Date.now()));
+    }, 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     onChattingStateChange?.(status === 'active');
@@ -460,6 +449,29 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     setSavedMatches(matches);
   }
 
+  async function refreshRegisteredMembers() {
+    setIsLoadingMembers(true);
+    setMemberLoadNotice(null);
+
+    try {
+      const members = await appServices.nearby.list(profile);
+
+      setInboxThreads(
+        members.map((member) => ({
+          id: `registered-${member.id}`,
+          candidate: member,
+          unread: false,
+          messages: []
+        }))
+      );
+    } catch {
+      setInboxThreads([]);
+      setMemberLoadNotice('Registered members could not load yet. Check your backend setup and connection.');
+    } finally {
+      setIsLoadingMembers(false);
+    }
+  }
+
   async function sendMessage() {
     const text = draft.trim();
 
@@ -564,7 +576,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     );
   }
 
-  function publishStory() {
+  async function publishStory() {
     const text = storyDraft.trim();
 
     if (!text) {
@@ -572,19 +584,16 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
       return;
     }
 
-    const nextStory: StoryItem = {
-      id: `story-${profile.id}-${Date.now()}`,
-      nickname: profile.nickname,
-      photoUrl: profile.avatarUrl,
-      text,
-      createdAt: new Date(),
-      mine: true
-    };
+    try {
+      const nextStory = await createPublicStory(profile, text);
 
-    setStories((current) => [nextStory, ...current]);
-    setStoryDraft('');
-    setStoryComposerVisible(false);
-    setActiveStory(nextStory);
+      setStories((current) => [nextStory, ...current.filter((story) => story.id !== nextStory.id)]);
+      setStoryDraft('');
+      setStoryComposerVisible(false);
+      setActiveStory(nextStory);
+    } catch (error) {
+      Alert.alert('Story not posted', storyErrorMessage(error));
+    }
   }
 
   function openInboxThread(threadId: string) {
@@ -741,14 +750,44 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
             <AppText style={styles.dotsText}>...</AppText>
           </View>
           <View style={styles.chatList}>
-            {inboxThreads.map((thread, index) => (
+            {isLoadingMembers ? (
+              <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
+                <ActivityIndicator size="small" color={colors.accent} />
+                <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+                  Loading registered KaTalk members...
+                </AppText>
+              </View>
+            ) : null}
+            {!isLoadingMembers && memberLoadNotice ? (
+              <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
+                <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+                  {memberLoadNotice}
+                </AppText>
+              </View>
+            ) : null}
+            {!isLoadingMembers && !memberLoadNotice && inboxThreads.length === 0 ? (
+              <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
+                <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
+                  No registered members yet
+                </AppText>
+                <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+                  Real users will appear here after they register and complete their profile.
+                </AppText>
+              </View>
+            ) : null}
+            {inboxThreads.map((thread) => (
               <PressableScale
                 key={thread.id}
                 accessibilityRole="button"
                 onPress={() => openInboxThread(thread.id)}
                 style={[styles.chatRow, darkMode && styles.chatRowDark]}
               >
-                <Image source={{ uri: thread.candidate.photoUrl }} style={styles.chatAvatar} />
+                <MemberAvatar
+                  name={thread.candidate.nickname}
+                  photoUrl={thread.candidate.photoUrl}
+                  color={thread.candidate.avatarColor}
+                  size={50}
+                />
                 <View style={styles.chatPreview}>
                   <AppText style={[styles.chatName, darkMode && styles.textOnDark]}>
                     {thread.candidate.nickname}
@@ -758,14 +797,8 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                   </AppText>
                 </View>
                 <View style={styles.chatMeta}>
-                  <AppText style={styles.chatTime}>
-                    {index === 0 ? '11:43 am' : index === 1 ? '09:21 am' : 'Yesterday'}
-                  </AppText>
-                  {thread.unread ? (
-                    <View style={styles.unreadDot} />
-                  ) : index < 2 ? (
-                    <AppText style={styles.seenText}>Seen</AppText>
-                  ) : null}
+                  <AppText style={styles.chatTime}>Registered</AppText>
+                  {thread.unread ? <View style={styles.unreadDot} /> : null}
                 </View>
               </PressableScale>
             ))}
@@ -776,7 +809,12 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
               <AppText style={[styles.savedTitle, darkMode && styles.textOnDark]}>Saved matches</AppText>
               {savedMatches.map((match) => (
                 <View key={match.id} style={styles.savedRow}>
-                  <Image source={{ uri: match.candidate.photoUrl }} style={styles.savedAvatar} />
+                  <MemberAvatar
+                    name={match.candidate.nickname}
+                    photoUrl={match.candidate.photoUrl}
+                    color={match.candidate.avatarColor}
+                    size={38}
+                  />
                   <View style={styles.savedInfo}>
                     <AppText style={[styles.savedName, darkMode && styles.textOnDark]}>Anonymous saved match</AppText>
                     <AppText style={styles.savedMeta}>
@@ -793,7 +831,12 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
       {candidate && (status === 'active' || status === 'expired' || status === 'saved') ? (
         <View style={styles.chatArea}>
           <View style={[styles.matchHeader, darkMode && styles.matchHeaderDark]}>
-            <Image source={{ uri: candidate.photoUrl }} style={styles.avatarImage} />
+            <MemberAvatar
+              name={candidate.nickname}
+              photoUrl={candidate.photoUrl}
+              color={candidate.avatarColor}
+              size={46}
+            />
             <View style={styles.matchInfo}>
               <AppText style={[styles.matchName, darkMode && styles.textOnDark]}>Anonymous match</AppText>
               <AppText style={styles.matchMeta}>
@@ -944,8 +987,14 @@ function MatchSearchWindow({
               isNone && styles.matchWindowAvatarNone
             ]}
           >
-            {candidate?.photoUrl ? (
-              <Image source={{ uri: candidate.photoUrl }} style={styles.matchWindowImage} />
+            {candidate ? (
+              <MemberAvatar
+                name={candidate.nickname}
+                photoUrl={candidate.photoUrl}
+                color={isFound ? colors.accent : candidate.avatarColor}
+                size={94}
+                borderColor="transparent"
+              />
             ) : isNone ? (
               <SearchGlyph color={colors.accent} />
             ) : (
@@ -1034,10 +1083,12 @@ function StoryViewerModal({
   darkMode,
   onClose
 }: {
-  story: StoryItem | null;
+  story: PublicStory | null;
   darkMode: boolean;
   onClose: () => void;
 }) {
+  const hoursLeft = story ? Math.max(0, Math.ceil((story.expiresAt.getTime() - Date.now()) / (60 * 60 * 1000))) : 0;
+
   return (
     <Modal transparent visible={Boolean(story)} animationType="fade" onRequestClose={onClose}>
       <View style={styles.socialModalOverlay}>
@@ -1057,7 +1108,9 @@ function StoryViewerModal({
               <View style={styles.storyViewerCopy}>
                 <AppText style={[styles.storyViewerName, darkMode && styles.textOnDark]}>{story.nickname}</AppText>
                 <AppText style={styles.storyViewerTime}>
-                  {story.mine ? 'Just now' : story.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {story.mine
+                    ? `Your story - ends in ${hoursLeft}h`
+                    : `${story.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ends in ${hoursLeft}h`}
                 </AppText>
               </View>
               <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
@@ -1099,10 +1152,15 @@ function InboxThreadModal({
         {thread ? (
           <View style={[styles.inboxSheet, darkMode && styles.cardDark]}>
             <View style={styles.inboxHeader}>
-              <Image source={{ uri: thread.candidate.photoUrl }} style={styles.inboxAvatar} />
+              <MemberAvatar
+                name={thread.candidate.nickname}
+                photoUrl={thread.candidate.photoUrl}
+                color={thread.candidate.avatarColor}
+                size={44}
+              />
               <View style={styles.inboxTitleBlock}>
                 <AppText style={[styles.inboxName, darkMode && styles.textOnDark]}>{thread.candidate.nickname}</AppText>
-                <AppText style={styles.inboxMeta}>Saved-message preview</AppText>
+                <AppText style={styles.inboxMeta}>Registered KaTalk member</AppText>
               </View>
               <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
                 <AppText style={[styles.socialCloseText, darkMode && styles.textOnDark]}>X</AppText>
@@ -1110,6 +1168,19 @@ function InboxThreadModal({
             </View>
 
             <ScrollView contentContainerStyle={styles.inboxMessages}>
+              {thread.messages.length === 0 ? (
+                <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
+                  <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
+                    Real member profile
+                  </AppText>
+                  <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+                    {thread.candidate.prompt}
+                  </AppText>
+                  <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+                    Use Find Chat when both people are available for a timed real chat.
+                  </AppText>
+                </View>
+              ) : null}
               {thread.messages.map((message) => (
                 <View
                   key={message.id}
@@ -1132,24 +1203,26 @@ function InboxThreadModal({
               ))}
             </ScrollView>
 
-            <View style={[styles.inboxInputRow, darkMode && styles.inputRowDark]}>
-              <TextInput
-                value={draft}
-                onChangeText={onDraftChange}
-                placeholder="Write a message"
-                placeholderTextColor={colors.muted}
-                multiline
-                style={[styles.inboxInput, darkMode && styles.inputDark]}
-              />
-              <PressableScale
-                accessibilityRole="button"
-              disabled={!draft.trim()}
-              onPress={onSend}
-              style={[styles.inboxSendButton, !draft.trim() && styles.inboxSendButtonDisabled]}
-            >
-                <AppText style={styles.sendButtonText}>{'>'}</AppText>
-              </PressableScale>
-            </View>
+            {thread.messages.length > 0 ? (
+              <View style={[styles.inboxInputRow, darkMode && styles.inputRowDark]}>
+                <TextInput
+                  value={draft}
+                  onChangeText={onDraftChange}
+                  placeholder="Write a message"
+                  placeholderTextColor={colors.muted}
+                  multiline
+                  style={[styles.inboxInput, darkMode && styles.inputDark]}
+                />
+                <PressableScale
+                  accessibilityRole="button"
+                  disabled={!draft.trim()}
+                  onPress={onSend}
+                  style={[styles.inboxSendButton, !draft.trim() && styles.inboxSendButtonDisabled]}
+                >
+                  <AppText style={styles.sendButtonText}>{'>'}</AppText>
+                </PressableScale>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </KeyboardAvoidingView>
@@ -1431,6 +1504,27 @@ const styles = StyleSheet.create({
   },
   chatList: {
     gap: 2
+  },
+  emptyState: {
+    minHeight: 96,
+    borderRadius: 8,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceMuted
+  },
+  emptyStateTitle: {
+    color: colors.ink,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  emptyStateText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   chatRow: {
     minHeight: 70,

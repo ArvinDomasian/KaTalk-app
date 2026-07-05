@@ -12,8 +12,8 @@ import { LoadingScreen } from './src/screens/LoadingScreen';
 import { AppText } from './src/components/AppText';
 import { PressableScale } from './src/components/PressableScale';
 import { subscribeAdminAccess } from './src/services/adminService';
-import { signOutCurrentUser } from './src/services/firebaseAuthService';
-import { saveFirebaseUserProfile } from './src/services/firebaseProfileService';
+import { signOutCurrentUser } from './src/services/authService';
+import { saveUserProfile } from './src/services/profileService';
 import {
   clearStoredProfile,
   loadStoredProfile,
@@ -64,9 +64,32 @@ export default function App() {
     return subscribeAdminAccess(setIsAdmin);
   }, [profile?.id]);
 
+  useEffect(() => {
+    if (!profile) {
+      return undefined;
+    }
+
+    void saveUserProfile(profile);
+    const syncTimer = setTimeout(() => {
+      void saveUserProfile(profile);
+    }, 1500);
+
+    return () => clearTimeout(syncTimer);
+  }, [
+    profile?.id,
+    profile?.nickname,
+    profile?.avatarUrl,
+    profile?.dateOfBirth,
+    profile?.gender,
+    profile?.preference,
+    profile?.ageRange,
+    profile?.interests?.join(','),
+    profile?.comfort
+  ]);
+
   function completeRegistration(nextProfile: UserProfile) {
     saveStoredProfile(nextProfile);
-    void saveFirebaseUserProfile(nextProfile);
+    void saveUserProfile(nextProfile);
     setIsEnteringApp(true);
     setActiveTab('message');
     setIsMessageChatting(false);
@@ -105,7 +128,7 @@ export default function App() {
   function updateProfile(nextProfile: UserProfile) {
     setProfile(nextProfile);
     saveStoredProfile(nextProfile);
-    void saveFirebaseUserProfile(nextProfile);
+    void saveUserProfile(nextProfile);
   }
 
   function updateThemeMode(nextDarkMode: boolean) {

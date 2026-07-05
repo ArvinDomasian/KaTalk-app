@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ImageBackground, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { AppText } from '../components/AppText';
+import { MemberAvatar } from '../components/MemberAvatar';
 import { PressableScale } from '../components/PressableScale';
 import { VoiceRoomStage } from '../components/VoiceRoomStage';
-import { candidates } from '../data/mockData';
 import { appServices } from '../services/localAppServices';
+import { avatarColorForId } from '../services/registeredUserService';
 import { colors } from '../theme';
 import type { UserProfile, VoiceRoom } from '../types';
 
@@ -19,12 +20,28 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
   const [muted, setMuted] = useState(true);
   const [handRaised, setHandRaised] = useState(false);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+  const [roomLoadNotice, setRoomLoadNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    void appServices.rooms.list().then(setRooms);
-  }, []);
+    void refreshRooms();
+  }, [profile.id]);
 
   const activeRoom = rooms.find((room) => room.isJoined) ?? null;
+
+  async function refreshRooms() {
+    setIsLoadingRooms(true);
+    setRoomLoadNotice(null);
+
+    try {
+      setRooms(await appServices.rooms.list(profile));
+    } catch {
+      setRooms([]);
+      setRoomLoadNotice('Registered voice members could not load yet. Check your backend setup and connection.');
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  }
 
   function joinRoom(roomId: string) {
     setRooms((current) =>
@@ -71,7 +88,7 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
     void appServices.safety.record({
       source: 'voice_room',
       action: 'block',
-      targetId: `${room.id}:host:${room.host}`,
+      targetId: room.hostId ?? `${room.id}:host:${room.host}`,
       actorId: profile.id
     });
     Alert.alert('Host blocked', `${room.host} will be hidden from future room interactions.`);
@@ -97,42 +114,42 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
   return (
     <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <ImageBackground
-          source={{ uri: candidates[2].photoUrl }}
-          imageStyle={styles.heroImage}
-          style={styles.hero}
-        >
-          <View style={styles.heroShade} />
+        <View style={styles.hero}>
           <View style={styles.heroTop}>
             <PressableScale accessibilityRole="button" style={styles.glassButton}>
               <Ionicons name="arrow-back" size={20} color={colors.onAccent} />
             </PressableScale>
             <View style={styles.locationPill}>
-              <AppText style={styles.locationText}>Los Angeles, CA</AppText>
-              <Ionicons name="location" size={14} color={colors.ink} />
+              <AppText style={styles.locationText}>Registered members</AppText>
+              <Ionicons name="people" size={14} color={colors.ink} />
             </View>
           </View>
 
-          <View style={styles.heroSideActions}>
-            <PressableScale accessibilityRole="button" style={styles.sideIcon}>
-              <Ionicons name="heart" size={20} color={colors.onAccent} />
-            </PressableScale>
-            <PressableScale accessibilityRole="button" style={styles.sideIcon}>
-              <Ionicons name="person" size={20} color={colors.onAccent} />
-            </PressableScale>
-            <PressableScale accessibilityRole="button" style={styles.sideIcon}>
-              <Ionicons name="chatbubble" size={19} color={colors.onAccent} />
-            </PressableScale>
+          <View style={styles.heroMemberRow}>
+            {rooms.slice(0, 4).map((room) => (
+              <MemberAvatar
+                key={room.id}
+                name={room.host}
+                color={avatarColorForId(room.hostId ?? room.id)}
+                size={58}
+                borderColor="rgba(255,255,255,0.6)"
+              />
+            ))}
+            {rooms.length === 0 ? (
+              <View style={styles.heroEmptyAvatar}>
+                <Ionicons name="mic-outline" size={28} color={colors.onAccent} />
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.heroBottom}>
-            <AppText style={styles.distanceText}>3.5 Km Away</AppText>
-            <AppText style={styles.heroName}>Nearby Voice Rooms</AppText>
+            <AppText style={styles.distanceText}>{rooms.length} registered voice rooms</AppText>
+            <AppText style={styles.heroName}>Real Member Voice Rooms</AppText>
             <AppText style={styles.heroCopy}>
-              Join low-pressure group conversations whenever you feel ready.
+              Join low-pressure group conversations hosted by registered KaTalk members.
             </AppText>
           </View>
-        </ImageBackground>
+        </View>
 
         <View style={[styles.notice, darkMode && styles.cardDark]}>
           <Ionicons name="mic-outline" size={22} color={colors.accent} />
@@ -142,13 +159,39 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
           </AppText>
         </View>
 
+        {isLoadingRooms ? (
+          <View style={[styles.emptyState, darkMode && styles.cardDark]}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+              Loading real registered voice rooms...
+            </AppText>
+          </View>
+        ) : null}
+        {!isLoadingRooms && roomLoadNotice ? (
+          <View style={[styles.emptyState, darkMode && styles.cardDark]}>
+            <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+              {roomLoadNotice}
+            </AppText>
+          </View>
+        ) : null}
+        {!isLoadingRooms && !roomLoadNotice && rooms.length === 0 ? (
+          <View style={[styles.emptyState, darkMode && styles.cardDark]}>
+            <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
+              No real voice rooms yet
+            </AppText>
+            <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+              Voice rooms will appear here after other registered users complete their profiles.
+            </AppText>
+          </View>
+        ) : null}
+
         {rooms.map((room) => (
           <View key={room.id} style={[styles.roomCard, darkMode && styles.cardDark]}>
             <View style={styles.roomTop}>
               <View style={styles.moodPill}>
                 <AppText style={styles.moodText}>{room.mood}</AppText>
               </View>
-              <AppText style={styles.count}>{room.participants} listening</AppText>
+              <AppText style={styles.count}>{room.participants} registered</AppText>
             </View>
             <AppText style={[styles.roomTitle, darkMode && styles.textOnDark]}>{room.title}</AppText>
             <AppText style={styles.host}>Hosted by {room.host}</AppText>
@@ -239,19 +282,12 @@ const styles = StyleSheet.create({
     paddingBottom: 28
   },
   hero: {
-    minHeight: 510,
-    borderRadius: 34,
+    minHeight: 280,
+    borderRadius: 24,
     overflow: 'hidden',
     justifyContent: 'space-between',
     padding: 18,
     backgroundColor: colors.cardDark
-  },
-  heroImage: {
-    borderRadius: 34
-  },
-  heroShade: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.28)'
   },
   heroTop: {
     flexDirection: 'row',
@@ -279,17 +315,19 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12
   },
-  heroSideActions: {
-    alignSelf: 'flex-end',
-    gap: 18
+  heroMemberRow: {
+    minHeight: 86,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
   },
-  sideIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  heroEmptyAvatar: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.24)'
+    backgroundColor: colors.accent
   },
   heroBottom: {
     gap: 6,
@@ -322,6 +360,29 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '700',
     color: colors.ink
+  },
+  emptyState: {
+    minHeight: 118,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: colors.surface
+  },
+  emptyStateTitle: {
+    color: colors.ink,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  emptyStateText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    textAlign: 'center'
   },
   roomCard: {
     backgroundColor: colors.surface,

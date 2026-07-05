@@ -1,5 +1,7 @@
 import { addDoc, collection, getFirestore, serverTimestamp } from 'firebase/firestore';
 import type { SafetyEvent } from './contracts';
+import { shouldUseSupabase } from './backendConfig';
+import { getCurrentAuthUserId } from './authService';
 import { getConfiguredFirebaseApp, getCurrentFirebaseUserId } from './firebaseAuthService';
 
 const REPORT_COLLECTION = 'reports';
@@ -15,15 +17,24 @@ function getReportDb() {
   return app ? getFirestore(app) : null;
 }
 
+function uuidOrNull(value?: string) {
+  const candidate = value ?? '';
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
+    ? candidate
+    : null;
+}
+
 export async function submitSafetyReport(event: SafetyReportInput) {
   if (event.action !== 'report') {
     return null;
   }
 
   const db = getReportDb();
-  const reporterId = getCurrentFirebaseUserId() ?? event.actorId;
+  const reporterId = shouldUseSupabase()
+    ? getCurrentAuthUserId() ?? event.actorId
+    : getCurrentFirebaseUserId() ?? event.actorId;
 
-  if (!db || !reporterId) {
+  if (!reporterId) {
     return null;
   }
 
@@ -43,6 +54,49 @@ export async function submitSafetyReport(event: SafetyReportInput) {
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   };
+
+  if (shouldUseSupabase()) {
+    const { getSupabaseClient } = await import('./supabaseClient');
+    const supabase = getSupabaseClient();
+
+    if (!supabase) {
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('reports')
+      .insert({
+        source: event.source,
+        action: event.action,
+        reporter_id: reporterId,
+        actor_id: uuidOrNull(event.actorId),
+        target_user_id: uuidOrNull(event.targetId),
+        target_id: event.targetId,
+        target_nickname: event.targetNickname ?? null,
+        match_id: event.matchId ?? null,
+        reason: event.reason ?? 'User report',
+        status: 'open',
+        created_at_ms: createdAtMs,
+        created_at: new Date(createdAtMs).toISOString(),
+        updated_at: new Date(createdAtMs).toISOString()
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      return null;
+    }
+
+    return {
+      id: String(data?.id ?? `report-${createdAtMs}`),
+      ...report,
+      createdAt: new Date(createdAtMs)
+    };
+  }
+
+  if (!db) {
+    return null;
+  }
 
   const docRef = await addDoc(collection(db, REPORT_COLLECTION), report);
 
