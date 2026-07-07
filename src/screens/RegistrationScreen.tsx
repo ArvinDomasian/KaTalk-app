@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Image, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import type { GestureResponderEvent, LayoutChangeEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
-import { candidates } from '../data/mockData';
 import {
   confirmEmailVerification,
   getCurrentAuthUserId,
@@ -360,11 +359,8 @@ function WelcomeStartScreen({
   const [verificationSent, setVerificationSent] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
-  const [heroIndex, setHeroIndex] = useState(1);
-  const heroOpacity = useRef(new Animated.Value(1)).current;
   const cardOpacity = useRef(new Animated.Value(1)).current;
   const cardTranslate = useRef(new Animated.Value(0)).current;
-  const heroPhotos = [candidates[1], candidates[2], candidates[0], candidates[3]];
   const canSendSocial =
     authName.trim().length >= 2 &&
     authEmail.includes('@') &&
@@ -373,25 +369,6 @@ function WelcomeStartScreen({
   const canConfirmSocial = verificationSent && !authBusy;
   const canSendPhone = phoneNumber.trim().length >= 8 && !authBusy;
   const canLogin = loginEmail.includes('@') && loginPassword.length >= 6 && !authBusy;
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      Animated.timing(heroOpacity, {
-        toValue: 0,
-        duration: 260,
-        useNativeDriver: true
-      }).start(() => {
-        setHeroIndex((current) => (current + 1) % heroPhotos.length);
-        Animated.timing(heroOpacity, {
-          toValue: 1,
-          duration: 360,
-          useNativeDriver: true
-        }).start();
-      });
-    }, 3600);
-
-    return () => clearInterval(interval);
-  }, [heroOpacity, heroPhotos.length]);
 
   function transitionCard(action: () => void) {
     Animated.parallel([
@@ -585,135 +562,171 @@ function WelcomeStartScreen({
 
   return (
     <View style={styles.welcomeRoot}>
-      <View style={styles.welcomeTop}>
-        <AppText style={styles.welcomeLogo}>KaTalk</AppText>
-        <Animated.Image
-          source={{ uri: heroPhotos[heroIndex].photoUrl }}
-          style={[styles.welcomeHeroPhoto, { opacity: heroOpacity }]}
-        />
-      </View>
+      <View style={styles.authPhoneShell}>
+        <View style={styles.authGridOverlay} />
+        <View style={styles.authStatusRow}>
+          <AppText style={styles.authTime}>9:41</AppText>
+          {!showLoginForm ? (
+            <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.authLoginLink}>
+              <AppText style={styles.authLoginText}>Log In</AppText>
+              <Ionicons name="arrow-forward" size={13} color={colors.onAccent} />
+            </PressableScale>
+          ) : (
+            <View style={styles.authSignalRow}>
+              <Ionicons name="cellular" size={13} color={colors.onAccent} />
+              <Ionicons name="wifi" size={13} color={colors.onAccent} />
+              <Ionicons name="battery-half" size={15} color={colors.onAccent} />
+            </View>
+          )}
+        </View>
 
-      <Animated.View
-        style={[
-          styles.welcomeCard,
-          {
-            opacity: cardOpacity,
-            transform: [{ translateY: cardTranslate }]
-          }
-        ]}
-      >
-        <AppText style={styles.welcomeTitle}>
-          {authMethod
-            ? authMethod === 'phone'
-              ? 'Register With Phone'
-              : `Register With ${authMethod === 'apple' ? 'Apple' : 'Google'}`
-            : showLoginForm
-            ? 'Log In To KaTalk'
-            : showRegisterOptions
-            ? 'Register To Start Meeting People'
-            : 'Start To Find Your Ideal Relationship'}
+        <AppText style={styles.authGhostWords}>
+          SMART{'\n'}MATCHING FOR{'\n'}REAL LOVE
         </AppText>
-        <AppText style={styles.welcomeCopy}>
-          {authMethod
-            ? authMethod === 'phone'
-              ? 'Real SMS verification needs SMS auth setup before this method can go live.'
-              : 'Create a password, verify your Gmail, then use this same login next time.'
-            : showLoginForm
-            ? 'Use the Gmail and password you registered with. Verified users enter immediately.'
-            : showRegisterOptions
-            ? 'Choose a registration method to create your calm, anonymous-first profile.'
-            : 'Create a unique emotional story that describes you better than words.'}
-        </AppText>
-        {authMethod ? (
-          <AuthMethodForm
-            method={authMethod}
-            name={authName}
-            email={authEmail}
-            password={authPassword}
-            phoneNumber={phoneNumber}
-            verificationSent={verificationSent}
-            verificationStatus={verificationStatus}
-            isBusy={authBusy}
-            canSend={authMethod === 'phone' ? canSendPhone : canSendSocial}
-            canContinue={authMethod === 'phone' ? false : canConfirmSocial}
-            onNameChange={setAuthName}
-            onEmailChange={(value) => {
-              setAuthEmail(value);
-              resetVerificationState();
-            }}
-            onPasswordChange={(value) => {
-              setAuthPassword(value);
-              resetVerificationState();
-            }}
-            onPhoneChange={(value) => {
-              setPhoneNumber(value);
-              resetVerificationState();
-            }}
-            onSendCode={handleSendVerification}
-            onBack={resetToMethods}
-            onContinue={handleConfirmVerification}
-          />
-        ) : showLoginForm ? (
-          <LoginForm
-            email={loginEmail}
-            password={loginPassword}
-            status={verificationStatus}
-            isBusy={authBusy}
-            canLogin={canLogin}
-            onEmailChange={(value) => {
-              setLoginEmail(value);
-              setVerificationStatus(null);
-            }}
-            onPasswordChange={(value) => {
-              setLoginPassword(value);
-              setVerificationStatus(null);
-            }}
-            onLogin={handleLogin}
-            onPasswordReset={handlePasswordReset}
-            onBack={() => transitionCard(() => setShowLoginForm(false))}
-          />
-        ) : showRegisterOptions ? (
-          <>
-            <AuthOptionButton
-              icon="logo-apple"
-              label="Continue with Apple"
-              onPress={() => selectMethod('apple')}
-              variant="apple"
-            />
-            <AuthOptionButton
-              icon="logo-google"
-              label="Continue with Google"
-              onPress={() => selectMethod('google')}
-              variant="google"
-            />
-            <AuthOptionButton
-              icon="phone-portrait"
-              label="Continue with Phone"
-              onPress={() => selectMethod('phone')}
-              variant="phone"
-            />
-            <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.loginPrompt}>
-              <AppText style={styles.loginPromptText}>Already have an account?</AppText>
-              <AppText style={styles.loginPromptAction}>Log in</AppText>
-            </PressableScale>
-          </>
-        ) : (
-          <>
-            <PressableScale
-              accessibilityRole="button"
-              onPress={openRegisterOptions}
-              style={styles.getStartedButton}
-            >
-              <AppText style={styles.getStartedText}>Get Started</AppText>
-              <Ionicons name="chevron-forward" size={18} color={colors.ink} />
-            </PressableScale>
-            <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.loginPrompt}>
-              <AppText style={styles.loginPromptText}>Already registered?</AppText>
-              <AppText style={styles.loginPromptAction}>Log in</AppText>
-            </PressableScale>
-          </>
-        )}
-      </Animated.View>
+        <Ionicons name="heart-outline" size={206} color="rgba(255,255,255,0.11)" style={styles.authHeart} />
+
+        <Animated.View
+          style={[
+            styles.welcomeCard,
+            {
+              opacity: cardOpacity,
+              transform: [{ translateY: cardTranslate }]
+            }
+          ]}
+        >
+          {!authMethod && !showLoginForm && !showRegisterOptions ? (
+            <>
+              <AppText style={styles.authHeadline}>
+                SMART
+                <AppText style={styles.authHeartDot}>●</AppText>
+                {'\n'}
+                <AppText style={styles.authHeadlineAccent}>MATCHING</AppText> FOR{'\n'}
+                REAL LOVE{'\n'}TODAY
+              </AppText>
+              <PressableScale
+                accessibilityRole="button"
+                onPress={() => selectMethod('phone')}
+                style={styles.phoneContinueButton}
+              >
+                <AppText style={styles.phoneContinueText}>Continue With Phone</AppText>
+              </PressableScale>
+              <View style={styles.socialButtonRow}>
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue with Apple"
+                  onPress={() => selectMethod('apple')}
+                  style={styles.socialIconButton}
+                >
+                  <Ionicons name="logo-apple" size={18} color={colors.onAccent} />
+                </PressableScale>
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue with Google"
+                  onPress={() => selectMethod('google')}
+                  style={styles.socialIconButton}
+                >
+                  <Ionicons name="logo-google" size={18} color={colors.onAccent} />
+                </PressableScale>
+              </View>
+            </>
+          ) : (
+            <>
+              <AppText style={styles.welcomeTitle}>
+                {authMethod
+                  ? authMethod === 'phone'
+                    ? 'Register With Phone'
+                    : `Register With ${authMethod === 'apple' ? 'Apple' : 'Google'}`
+                  : showLoginForm
+                    ? 'Log In To KaTalk'
+                    : 'Register To Start Meeting People'}
+              </AppText>
+              <AppText style={styles.welcomeCopy}>
+                {authMethod
+                  ? authMethod === 'phone'
+                    ? 'Real SMS verification needs SMS auth setup before this method can go live.'
+                    : 'Create a password, verify your Gmail, then use this same login next time.'
+                  : showLoginForm
+                    ? 'Use the Gmail and password you registered with. Verified users enter immediately.'
+                    : 'Choose a registration method to create your calm, anonymous-first profile.'}
+              </AppText>
+              {authMethod ? (
+                <AuthMethodForm
+                  method={authMethod}
+                  name={authName}
+                  email={authEmail}
+                  password={authPassword}
+                  phoneNumber={phoneNumber}
+                  verificationSent={verificationSent}
+                  verificationStatus={verificationStatus}
+                  isBusy={authBusy}
+                  canSend={authMethod === 'phone' ? canSendPhone : canSendSocial}
+                  canContinue={authMethod === 'phone' ? false : canConfirmSocial}
+                  onNameChange={setAuthName}
+                  onEmailChange={(value) => {
+                    setAuthEmail(value);
+                    resetVerificationState();
+                  }}
+                  onPasswordChange={(value) => {
+                    setAuthPassword(value);
+                    resetVerificationState();
+                  }}
+                  onPhoneChange={(value) => {
+                    setPhoneNumber(value);
+                    resetVerificationState();
+                  }}
+                  onSendCode={handleSendVerification}
+                  onBack={resetToMethods}
+                  onContinue={handleConfirmVerification}
+                />
+              ) : showLoginForm ? (
+                <LoginForm
+                  email={loginEmail}
+                  password={loginPassword}
+                  status={verificationStatus}
+                  isBusy={authBusy}
+                  canLogin={canLogin}
+                  onEmailChange={(value) => {
+                    setLoginEmail(value);
+                    setVerificationStatus(null);
+                  }}
+                  onPasswordChange={(value) => {
+                    setLoginPassword(value);
+                    setVerificationStatus(null);
+                  }}
+                  onLogin={handleLogin}
+                  onPasswordReset={handlePasswordReset}
+                  onBack={() => transitionCard(() => setShowLoginForm(false))}
+                />
+              ) : (
+                <>
+                  <AuthOptionButton
+                    icon="logo-apple"
+                    label="Continue with Apple"
+                    onPress={() => selectMethod('apple')}
+                    variant="apple"
+                  />
+                  <AuthOptionButton
+                    icon="logo-google"
+                    label="Continue with Google"
+                    onPress={() => selectMethod('google')}
+                    variant="google"
+                  />
+                  <AuthOptionButton
+                    icon="phone-portrait"
+                    label="Continue with Phone"
+                    onPress={() => selectMethod('phone')}
+                    variant="phone"
+                  />
+                  <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.loginPrompt}>
+                    <AppText style={styles.loginPromptText}>Already have an account?</AppText>
+                    <AppText style={styles.loginPromptAction}>Log in</AppText>
+                  </PressableScale>
+                </>
+              )}
+            </>
+          )}
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -1155,48 +1168,145 @@ const styles = StyleSheet.create({
   },
   welcomeRoot: {
     flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: 'space-between'
-  },
-  welcomeTop: {
-    flex: 1,
-    paddingTop: 48,
+    backgroundColor: '#02040A',
     alignItems: 'center',
-    overflow: 'hidden'
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 18
   },
-  welcomeLogo: {
-    color: colors.accent,
-    fontSize: 31,
-    lineHeight: 37,
-    fontWeight: '900',
-    zIndex: 2
-  },
-  welcomeHeroPhoto: {
-    position: 'absolute',
+  authPhoneShell: {
+    flex: 1,
     width: '100%',
-    height: '112%',
-    top: 0,
-    resizeMode: 'cover'
+    maxWidth: 360,
+    borderRadius: 34,
+    borderWidth: 1,
+    borderColor: '#252A36',
+    backgroundColor: '#060810',
+    overflow: 'hidden',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 20,
+    justifyContent: 'space-between',
+    shadowColor: '#000000',
+    shadowOpacity: 0.45,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 12
+  },
+  authGridOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#070911',
+    opacity: 0.98
+  },
+  authStatusRow: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 3
+  },
+  authTime: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  authLoginLink: {
+    minHeight: 28,
+    paddingHorizontal: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3
+  },
+  authLoginText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  authSignalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  authGhostWords: {
+    position: 'absolute',
+    top: 70,
+    left: 20,
+    right: 14,
+    color: 'rgba(255,255,255,0.045)',
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '900',
+    letterSpacing: 0,
+    zIndex: 1
+  },
+  authHeart: {
+    position: 'absolute',
+    top: 106,
+    left: 42,
+    zIndex: 2,
+    transform: [{ rotate: '-10deg' }]
   },
   welcomeCard: {
-    marginHorizontal: 0,
-    paddingHorizontal: 24,
-    paddingTop: 26,
-    paddingBottom: 24,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    alignItems: 'center',
+    width: '100%',
+    marginTop: 'auto',
+    paddingHorizontal: 0,
+    paddingTop: 20,
+    paddingBottom: 0,
+    alignItems: 'stretch',
     gap: 12,
-    borderTopWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface
+    zIndex: 3
+  },
+  authHeadline: {
+    color: colors.onAccent,
+    fontSize: 25,
+    lineHeight: 29,
+    fontWeight: '900',
+    letterSpacing: 0,
+    maxWidth: 270
+  },
+  authHeartDot: {
+    color: colors.accent,
+    fontSize: 15,
+    lineHeight: 22
+  },
+  authHeadlineAccent: {
+    color: colors.accent
+  },
+  phoneContinueButton: {
+    width: '100%',
+    minHeight: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    marginTop: 4
+  },
+  phoneContinueText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  socialButtonRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10
+  },
+  socialIconButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#171A22'
   },
   welcomeTitle: {
     fontSize: 21,
     lineHeight: 26,
     fontWeight: '900',
     textAlign: 'center',
-    maxWidth: 300
+    maxWidth: 300,
+    color: colors.onAccent,
+    alignSelf: 'center'
   },
   welcomeCopy: {
     maxWidth: 280,
@@ -1204,7 +1314,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '700',
     fontSize: 12,
-    lineHeight: 17
+    lineHeight: 17,
+    alignSelf: 'center'
   },
   authButton: {
     width: '100%',
