@@ -8,7 +8,6 @@ const PUBLIC_PROFILE_TABLE = 'public_profiles';
 function profileRowFromUserProfile(profile: UserProfile, uid: string) {
   return {
     id: uid,
-    legacy_firebase_uid: profile.id !== uid && !profile.id.startsWith('local-') ? profile.id : null,
     nickname: profile.nickname,
     avatar_url: profile.avatarUrl ?? null,
     date_of_birth: profile.dateOfBirth,
@@ -36,7 +35,6 @@ function publicProfileRowFromUserProfile(profile: UserProfile, uid: string) {
 
   return {
     id: uid,
-    legacy_firebase_uid: profile.id !== uid && !profile.id.startsWith('local-') ? profile.id : null,
     nickname: profile.nickname || 'KaTalk member',
     photo_url: profile.avatarUrl ?? null,
     date_of_birth: profile.dateOfBirth || '2000-01-01',

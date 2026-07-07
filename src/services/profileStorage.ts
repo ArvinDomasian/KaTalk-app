@@ -89,13 +89,14 @@ export function loadStoredThemeMode(): ThemeMode {
   const storage = getBrowserStorage();
 
   if (!storage) {
-    return 'light';
+    return 'dark';
   }
 
   try {
-    return storage.getItem(THEME_MODE_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+    const storedTheme = storage.getItem(THEME_MODE_STORAGE_KEY);
+    return storedTheme === 'light' ? 'light' : 'dark';
   } catch {
-    return 'light';
+    return 'dark';
   }
 }
 

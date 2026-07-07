@@ -27,9 +27,10 @@ import {
   subscribeLiveMatchState,
   subscribeLiveMessages,
   subscribeSavedMatchMessages
-} from '../services/firebaseMessageMatchService';
+} from '../services/liveMessageMatchService';
 import { appServices } from '../services/localAppServices';
 import { registeredMemberErrorMessage } from '../services/registeredUserService';
+import { recordConversationStarted } from '../services/userFeatureService';
 import {
   createPublicStory,
   subscribePublicStories,
@@ -48,6 +49,7 @@ type Props = {
   profile: UserProfile;
   darkMode?: boolean;
   onChattingStateChange?: (isChatting: boolean) => void;
+  onProfileUpdate?: (profile: UserProfile) => void;
 };
 
 type InboxThread = {
@@ -57,7 +59,12 @@ type InboxThread = {
   unread: boolean;
 };
 
-export function MessageMatchScreen({ profile, darkMode = false, onChattingStateChange }: Props) {
+export function MessageMatchScreen({
+  profile,
+  darkMode = false,
+  onChattingStateChange,
+  onProfileUpdate
+}: Props) {
   const [status, setStatus] = useState<MatchStatus>('idle');
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(MATCH_SECONDS);
@@ -287,6 +294,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     setMatchWindowCandidate(null);
     setHomeNotice(null);
     setStatus('active');
+    onProfileUpdate?.(recordConversationStarted(profile));
 
     if (!isLive) {
       setLiveMatchId(null);

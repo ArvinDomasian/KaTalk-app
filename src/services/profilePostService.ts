@@ -1,23 +1,10 @@
-import {
-  collection,
-  deleteDoc,
-  getFirestore,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  doc,
-  type Unsubscribe
-} from 'firebase/firestore';
-import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 import type { ProfilePost, UserProfile } from '../types';
-import { shouldUseSupabase, supabaseMissingConfigMessage } from './backendConfig';
-import { getConfiguredFirebaseApp } from './firebaseAuthService';
+import { supabaseMissingConfigMessage } from './backendConfig';
+import { getCurrentSupabaseUser, getSupabaseClient } from './supabaseClient';
 
-const USER_PROFILE_COLLECTION = 'userProfiles';
-const PROFILE_POST_COLLECTION = 'profilePosts';
 const PROFILE_POST_STORAGE_KEY = 'katalk.profilePosts.v1';
+
+type Unsubscribe = () => void;
 
 type CreateProfilePostOptions = {
   photoUrl?: string;
@@ -138,21 +125,6 @@ function mergeStoredPostsIntoMemory() {
   localPosts.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
 }
 
-function getPostDb() {
-  const app = getConfiguredFirebaseApp();
-  return app ? getFirestore(app) : null;
-}
-
-function getPostStorage() {
-  const app = getConfiguredFirebaseApp();
-  return app ? getStorage(app) : null;
-}
-
-function profilePostsCollection() {
-  const db = getPostDb();
-  return db ? collection(db, PROFILE_POST_COLLECTION) : null;
-}
-
 function visibleLocalPostsFor(profileId: string) {
   return localPosts.filter((post) => post.visibility === 'public' || post.profileId === profileId);
 }
@@ -161,24 +133,6 @@ export function loadVisibleProfilePosts(profileId: string) {
   mergeStoredPostsIntoMemory();
   return visibleLocalPostsFor(profileId)
     .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
-}
-
-function postFromSnapshot(id: string, data: Record<string, unknown>): ProfilePost {
-  const visibility = data.visibility === 'private' ? 'private' : 'public';
-
-  return {
-    id,
-    profileId: String(data.profileId ?? ''),
-    authorNickname: String(data.authorNickname ?? 'KaTalk member'),
-    body: String(data.body ?? ''),
-    photoUrl: data.photoUrl ? String(data.photoUrl) : undefined,
-    emoji: data.emoji ? String(data.emoji) : undefined,
-    voiceUrl: data.voiceUrl ? String(data.voiceUrl) : undefined,
-    musicUrl: data.musicUrl ? String(data.musicUrl) : undefined,
-    musicTitle: data.musicTitle ? String(data.musicTitle) : undefined,
-    visibility,
-    createdAt: new Date(typeof data.createdAtMs === 'number' ? data.createdAtMs : Date.now())
-  };
 }
 
 function postFromSupabaseRow(row: Record<string, unknown>): ProfilePost {
@@ -199,20 +153,6 @@ function postFromSupabaseRow(row: Record<string, unknown>): ProfilePost {
   };
 }
 
-function postErrorMessage(error: unknown) {
-  const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
-
-  if (code.includes('permission-denied')) {
-    return 'Firebase blocked profile posts. Check Firestore/Storage rules for authenticated users.';
-  }
-
-  if (code.includes('storage')) {
-    return 'Firebase Storage could not upload this photo. Make sure Storage is enabled.';
-  }
-
-  return code ? `Profile post failed because Firebase returned ${code}.` : 'Profile post failed.';
-}
-
 export function subscribeProfilePosts(
   profileId: string,
   onPosts: (posts: ProfilePost[]) => void,
@@ -224,104 +164,61 @@ export function subscribeProfilePosts(
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
   );
 
-  if (shouldUseSupabase()) {
-    let cleanup = () => undefined;
-    let disposed = false;
+  const supabase = getSupabaseClient();
 
-    void import('./supabaseClient').then(({ getSupabaseClient }) => {
-      if (disposed) {
-        return;
-      }
-
-      const supabase = getSupabaseClient();
-
-      if (!supabase) {
-        onError(supabaseMissingConfigMessage());
-        return;
-      }
-
-      const supabaseClient = supabase;
-
-      async function loadSupabasePosts() {
-      const { data, error } = await supabaseClient
-        .from('profile_posts')
-        .select('*')
-        .order('created_at_ms', { ascending: false })
-        .limit(200);
-
-      if (error) {
-        onError(error.message || 'Supabase profile posts could not load.');
-        return;
-      }
-
-      const remotePosts = ((data ?? []) as Record<string, unknown>[])
-        .map(postFromSupabaseRow)
-        .filter((post) => post.visibility === 'public' || post.profileId === profileId);
-
-      remotePosts.forEach(upsertLocalPost);
-
-      const remotePostIds = new Set(remotePosts.map((post) => post.id));
-      const localOnlyPosts = visibleLocalPostsFor(profileId).filter((post) => !remotePostIds.has(post.id));
-
-      onPosts(
-        [...localOnlyPosts, ...remotePosts].sort(
-          (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
-        )
-      );
-      }
-
-      void loadSupabasePosts();
-
-      const channel = supabaseClient
-        .channel(`profile-posts-${profileId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'profile_posts' }, () => {
-          void loadSupabasePosts();
-        })
-        .subscribe();
-
-      cleanup = () => {
-        void supabaseClient.removeChannel(channel);
-      };
-    });
-
-    return (() => {
-      disposed = true;
-      cleanup();
-    }) as Unsubscribe;
-  }
-
-  const postsCollection = profilePostsCollection();
-
-  if (!postsCollection) {
+  if (!supabase) {
+    onError(supabaseMissingConfigMessage());
     return (() => undefined) as Unsubscribe;
   }
 
-  return onSnapshot(
-    query(postsCollection, orderBy('createdAtMs', 'desc')),
-    (snapshot) => {
-      const remotePosts = snapshot.docs
-        .map((item) => postFromSnapshot(item.id, item.data()))
-        .filter((post) => post.visibility === 'public' || post.profileId === profileId);
+  const supabaseClient = supabase;
+  let disposed = false;
 
-      remotePosts.forEach(upsertLocalPost);
-
-      const remotePostIds = new Set(remotePosts.map((post) => post.id));
-      const localOnlyPosts = visibleLocalPostsFor(profileId).filter((post) => !remotePostIds.has(post.id));
-
-      onPosts(
-        [...localOnlyPosts, ...remotePosts].sort(
-          (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
-        )
-      );
-    },
-    (error) => {
-      onPosts(
-        visibleLocalPostsFor(profileId)
-          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
-      );
-      onError(postErrorMessage(error));
+  async function loadSupabasePosts() {
+    if (disposed) {
+      return;
     }
-  );
+
+    const { data, error } = await supabaseClient
+      .from('profile_posts')
+      .select('*')
+      .order('created_at_ms', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      onError(error.message || 'Supabase profile posts could not load.');
+      return;
+    }
+
+    const remotePosts = ((data ?? []) as Record<string, unknown>[])
+      .map(postFromSupabaseRow)
+      .filter((post) => post.visibility === 'public' || post.profileId === profileId);
+
+    remotePosts.forEach(upsertLocalPost);
+
+    const remotePostIds = new Set(remotePosts.map((post) => post.id));
+    const localOnlyPosts = visibleLocalPostsFor(profileId).filter((post) => !remotePostIds.has(post.id));
+
+    onPosts(
+      [...localOnlyPosts, ...remotePosts].sort(
+        (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
+      )
+    );
+  }
+
+  void loadSupabasePosts();
+
+  const channel = supabaseClient
+    .channel(`profile-posts-${profileId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profile_posts' }, () => {
+      void loadSupabasePosts();
+    })
+    .subscribe();
+
+  return (() => {
+    disposed = true;
+    void supabaseClient.removeChannel(channel);
+  }) as Unsubscribe;
 }
 
 export async function createProfilePost(
@@ -341,12 +238,15 @@ export async function createProfilePost(
     throw new Error('Write something, add a photo, or attach something first.');
   }
 
+  const supabase = getSupabaseClient();
+  const user = await getCurrentSupabaseUser();
+  const profileId = user?.id ?? profile.id;
   const createdAtMs = Date.now();
   const createdAt = new Date(createdAtMs);
-  const postId = `profile-post-${profile.id}-${createdAtMs}`;
+  const postId = `profile-post-${profileId}-${createdAtMs}`;
   const localPost: ProfilePost = {
     id: postId,
-    profileId: profile.id,
+    profileId,
     authorNickname: profile.nickname,
     body: cleanBody,
     photoUrl: photoUrl || undefined,
@@ -357,81 +257,39 @@ export async function createProfilePost(
     visibility,
     createdAt
   };
-  const post = {
-    profileId: profile.id,
-    authorNickname: profile.nickname,
-    body: cleanBody,
-    photoUrl: photoUrl || null,
-    emoji: emoji || null,
-    voiceUrl: voiceUrl || null,
-    musicUrl: musicUrl || null,
-    musicTitle: musicTitle || null,
-    visibility,
-    createdAtMs,
-    createdAt: serverTimestamp()
-  };
-  const postsCollection = profilePostsCollection();
 
   upsertLocalPost(localPost);
 
-  if (shouldUseSupabase()) {
-    const { getSupabaseClient } = await import('./supabaseClient');
-    const supabase = getSupabaseClient();
-
-    if (!supabase) {
-      return localPost;
-    }
-
-    void Promise.all([
-      supabase
-        .from('profiles')
-        .upsert({
-          id: profile.id,
-          nickname: profile.nickname,
-          interests: profile.interests,
-          updated_at_ms: Date.now(),
-          updated_at: new Date().toISOString()
-        }),
-      supabase.from('profile_posts').upsert({
-        id: postId,
-        profile_id: profile.id,
-        author_nickname: profile.nickname,
-        body: cleanBody,
-        photo_url: photoUrl || null,
-        emoji: emoji || null,
-        voice_url: voiceUrl || null,
-        music_url: musicUrl || null,
-        music_title: musicTitle || null,
-        visibility,
-        created_at_ms: createdAtMs,
-        created_at: new Date(createdAtMs).toISOString(),
-        updated_at: new Date(createdAtMs).toISOString()
-      })
-    ]).catch(() => undefined);
-
+  if (!supabase || !user) {
     return localPost;
   }
 
-  if (!postsCollection) {
-    return localPost;
-  }
-
-  const db = getPostDb();
-
-  if (db) {
-    void Promise.all([
-      setDoc(
-        doc(db, USER_PROFILE_COLLECTION, profile.id),
-        {
-          nickname: profile.nickname,
-          interests: profile.interests,
-          updatedAt: serverTimestamp()
-        },
-        { merge: true }
-      ),
-      setDoc(doc(db, PROFILE_POST_COLLECTION, postId), post)
-    ]).catch(() => undefined);
-  }
+  void Promise.all([
+    supabase
+      .from('profiles')
+      .upsert({
+        id: profileId,
+        nickname: profile.nickname,
+        interests: profile.interests,
+        updated_at_ms: Date.now(),
+        updated_at: new Date().toISOString()
+      }),
+    supabase.from('profile_posts').upsert({
+      id: postId,
+      profile_id: profileId,
+      author_nickname: profile.nickname,
+      body: cleanBody,
+      photo_url: photoUrl || null,
+      emoji: emoji || null,
+      voice_url: voiceUrl || null,
+      music_url: musicUrl || null,
+      music_title: musicTitle || null,
+      visibility,
+      created_at_ms: createdAtMs,
+      created_at: new Date(createdAtMs).toISOString(),
+      updated_at: new Date(createdAtMs).toISOString()
+    })
+  ]).catch(() => undefined);
 
   return localPost;
 }
@@ -452,36 +310,17 @@ export function updateProfilePostBody(postId: string, body: string) {
   localPosts[existingIndex] = updatedPost;
   saveStoredPosts();
 
-  const db = getPostDb();
+  const supabase = getSupabaseClient();
 
-  if (shouldUseSupabase()) {
-    void import('./supabaseClient').then(({ getSupabaseClient }) => {
-      const supabase = getSupabaseClient();
-
-      if (supabase) {
-        void supabase
-          .from('profile_posts')
-          .update({
-            body: cleanBody,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', postId)
-          .then(() => undefined, () => undefined);
-      }
-    });
-
-    return updatedPost;
-  }
-
-  if (db) {
-    void setDoc(
-      doc(db, PROFILE_POST_COLLECTION, postId),
-      {
+  if (supabase) {
+    void supabase
+      .from('profile_posts')
+      .update({
         body: cleanBody,
-        updatedAt: serverTimestamp()
-      },
-      { merge: true }
-    ).catch(() => undefined);
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', postId)
+      .then(() => undefined, () => undefined);
   }
 
   return updatedPost;
@@ -495,85 +334,30 @@ export function deleteProfilePost(postId: string) {
     saveStoredPosts();
   }
 
-  const db = getPostDb();
+  const supabase = getSupabaseClient();
 
-  if (shouldUseSupabase()) {
-    void import('./supabaseClient').then(({ getSupabaseClient }) => {
-      const supabase = getSupabaseClient();
-
-      if (supabase) {
-        void supabase
-          .from('profile_posts')
-          .delete()
-          .eq('id', postId)
-          .then(() => undefined, () => undefined);
-      }
-    });
-
-    return;
-  }
-
-  if (db) {
-    void deleteDoc(doc(db, PROFILE_POST_COLLECTION, postId)).catch(() => undefined);
+  if (supabase) {
+    void supabase
+      .from('profile_posts')
+      .delete()
+      .eq('id', postId)
+      .then(() => undefined, () => undefined);
   }
 }
 
-export async function uploadProfilePostPhoto(profileId: string, file: Blob) {
-  if (shouldUseSupabase()) {
-    return uploadSupabaseProfileFile('profile-posts', profileId, file);
-  }
-
-  const storage = getPostStorage();
-
-  if (!storage) {
-    throw new Error('Firebase Storage is not configured yet.');
-  }
-
-  const path = `profile-posts/${profileId}/${Date.now()}`;
-  const imageRef = ref(storage, path);
-
-  await uploadBytes(imageRef, file);
-  return getDownloadURL(imageRef);
+export function uploadProfilePostPhoto(profileId: string, file: Blob) {
+  return uploadSupabaseProfileFile('profile-posts', profileId, file);
 }
 
-export async function uploadProfileVoiceClip(profileId: string, file: Blob) {
-  if (shouldUseSupabase()) {
-    return uploadSupabaseProfileFile('profile-voice-posts', profileId, file);
-  }
-
-  const storage = getPostStorage();
-
-  if (!storage) {
-    throw new Error('Firebase Storage is not configured yet.');
-  }
-
-  const path = `profile-voice-posts/${profileId}/${Date.now()}`;
-  const voiceRef = ref(storage, path);
-
-  await uploadBytes(voiceRef, file);
-  return getDownloadURL(voiceRef);
+export function uploadProfileVoiceClip(profileId: string, file: Blob) {
+  return uploadSupabaseProfileFile('profile-voice-posts', profileId, file);
 }
 
-export async function uploadProfileAvatar(profileId: string, file: Blob) {
-  if (shouldUseSupabase()) {
-    return uploadSupabaseProfileFile('profile-avatars', profileId, file);
-  }
-
-  const storage = getPostStorage();
-
-  if (!storage) {
-    throw new Error('Firebase Storage is not configured yet.');
-  }
-
-  const path = `profile-avatars/${profileId}/${Date.now()}`;
-  const imageRef = ref(storage, path);
-
-  await uploadBytes(imageRef, file);
-  return getDownloadURL(imageRef);
+export function uploadProfileAvatar(profileId: string, file: Blob) {
+  return uploadSupabaseProfileFile('profile-avatars', profileId, file);
 }
 
 async function uploadSupabaseProfileFile(bucket: string, profileId: string, file: Blob) {
-  const { getSupabaseClient } = await import('./supabaseClient');
   const supabase = getSupabaseClient();
 
   if (!supabase) {
@@ -598,5 +382,5 @@ export function profilePostErrorMessage(error: unknown) {
     return error.message;
   }
 
-  return postErrorMessage(error);
+  return 'Profile post failed.';
 }

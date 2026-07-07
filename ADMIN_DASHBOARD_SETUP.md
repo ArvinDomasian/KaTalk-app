@@ -1,22 +1,22 @@
 # Admin Dashboard Setup
 
-KaTalk now has an admin-only dashboard for reports, bans, manual verification, and basic user stats.
+KaTalk uses Supabase for the admin dashboard, reports, bans, manual verification, and basic user stats.
 
 ## Create the first admin
 
-Firestore rules do not let a normal user promote themselves. Create the first admin manually in Firebase Console:
+Create the first admin manually in Supabase:
 
-1. Open Firebase Console.
-2. Go to Firestore Database.
-3. Create a collection named `admins`.
-4. Create a document whose document ID is the Firebase Auth `uid` of your admin account.
-5. Add these fields:
+1. Open Supabase.
+2. Go to Authentication and copy your admin user's `id`.
+3. Open Table Editor or SQL Editor.
+4. Insert a row into `admins` with that user id.
 
-```json
-{
-  "role": "owner",
-  "disabled": false
-}
+```sql
+insert into public.admins (id, role, disabled)
+values ('YOUR_SUPABASE_AUTH_USER_ID', 'owner', false)
+on conflict (id) do update
+set role = excluded.role,
+    disabled = excluded.disabled;
 ```
 
 After that account signs in, the Profile screen shows `Admin dashboard`.
@@ -24,23 +24,11 @@ After that account signs in, the Profile screen shows `Admin dashboard`.
 ## Dashboard data
 
 - Reports are stored in `reports`.
-- User profiles are stored in `userProfiles`.
+- User profiles are stored in `profiles`.
 - Admin access is stored in `admins`.
 
-Admins can:
+Admins can view reports, ban or unban users, manually verify users, and view basic stats.
 
-- View reported users.
-- Ban users.
-- Unban users.
-- Manually verify users.
-- View basic stats.
+## Security
 
-## Deploy Firestore rules
-
-If Firebase CLI is installed and logged in:
-
-```bash
-firebase deploy --only firestore:rules
-```
-
-The checked-in `firebase.json` points to `firestore.rules`.
+Run `supabase/schema.sql` and the Supabase repair SQL files in the Supabase SQL Editor. Admin-only access is controlled by Row Level Security and the `admins` table.

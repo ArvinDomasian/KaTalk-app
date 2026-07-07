@@ -39,15 +39,6 @@ function loadLocalEnv() {
 
 loadLocalEnv();
 
-const firebaseFallbackConfig = {
-  apiKey: 'AIzaSyBKJXkyKBo2Oyo4LzfhcdFKAHneYlH9VoQ',
-  authDomain: 'katalk-fbaf6.firebaseapp.com',
-  projectId: 'katalk-fbaf6',
-  storageBucket: 'katalk-fbaf6.firebasestorage.app',
-  messagingSenderId: '621528799120',
-  appId: '1:621528799120:web:5c3486122c4d10bf190515'
-};
-
 const admobFallbackConfig = {
   androidAppId: 'ca-app-pub-3940256099942544~3347511713',
   iosAppId: 'ca-app-pub-3940256099942544~1458002511',
@@ -110,18 +101,10 @@ module.exports = () => {
     },
     extra: {
       ...appJson.expo.extra,
-      backendProvider: clean(process.env.EXPO_PUBLIC_BACKEND_PROVIDER) || 'firebase',
+      backendProvider: 'supabase',
       supabase: {
         url: clean(process.env.EXPO_PUBLIC_SUPABASE_URL),
         anonKey: clean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY)
-      },
-      firebase: {
-        apiKey: clean(process.env.EXPO_PUBLIC_FIREBASE_API_KEY) || firebaseFallbackConfig.apiKey,
-        authDomain: clean(process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN) || firebaseFallbackConfig.authDomain,
-        projectId: clean(process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID) || firebaseFallbackConfig.projectId,
-        storageBucket: clean(process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET) || firebaseFallbackConfig.storageBucket,
-        messagingSenderId: clean(process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID) || firebaseFallbackConfig.messagingSenderId,
-        appId: clean(process.env.EXPO_PUBLIC_FIREBASE_APP_ID) || firebaseFallbackConfig.appId
       },
       revenueCat: {
         iosApiKey: clean(process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY),

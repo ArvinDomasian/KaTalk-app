@@ -5,7 +5,7 @@ import {
   listRegisteredVoiceRooms
 } from './registeredUserService';
 import { submitSafetyReport } from './reportService';
-import { shouldUseSupabase } from './backendConfig';
+import { listSupabaseSavedMessageMatches } from './supabaseMessageMatchService';
 
 function pickRandom<T>(items: T[]) {
   if (items.length === 0) {
@@ -47,12 +47,7 @@ export const appServices: AppServices = {
   },
   savedMatches: {
     async list(profile) {
-      if (shouldUseSupabase()) {
-        const { listSupabaseSavedMessageMatches } = await import('./supabaseMessageMatchService');
-        return listSupabaseSavedMessageMatches();
-      }
-
-      return savedMatches.filter((match) => match.userId === profile.id);
+      return listSupabaseSavedMessageMatches();
     },
     async save(profile, candidate) {
       const existing = savedMatches.find(

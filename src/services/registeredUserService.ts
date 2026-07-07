@@ -1,22 +1,7 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  getFirestore,
-  limit,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-  type Firestore
-} from 'firebase/firestore';
 import { colors } from '../theme';
 import type { Candidate, UserProfile, VoiceRoom } from '../types';
-import { shouldUseSupabase, supabaseMissingConfigMessage } from './backendConfig';
-import { getConfiguredFirebaseApp, getCurrentFirebaseUserId } from './firebaseAuthService';
-
-export const LIVE_PROFILE_COLLECTION = 'liveProfiles';
-export const LIVE_BLOCK_COLLECTION = 'liveBlocks';
+import { supabaseMissingConfigMessage } from './backendConfig';
+import { getCurrentSupabaseUser, getSupabaseClient } from './supabaseClient';
 
 export type PublicMemberProfile = {
   uid: string;
@@ -69,11 +54,6 @@ function normalizedInterests(interests: string[] | undefined) {
   return cleanedInterests.length > 0 ? cleanedInterests : ['Quiet conversations'];
 }
 
-function getRegisteredDb() {
-  const app = getConfiguredFirebaseApp();
-  return app ? getFirestore(app) : null;
-}
-
 function publicProfileFromSupabaseRow(row: SupabasePublicProfileRow): PublicMemberProfile {
   const interests = Array.isArray(row.interests) ? row.interests.map(String) : ['Quiet conversations'];
 
@@ -97,7 +77,6 @@ function supabasePublicProfileRowFromProfile(profile: UserProfile, uid: string) 
 
   return {
     id: uid,
-    legacy_firebase_uid: profile.id !== uid && !profile.id.startsWith('local-') ? profile.id : null,
     nickname: profile.nickname || 'KaTalk member',
     photo_url: profile.avatarUrl ?? null,
     date_of_birth: profile.dateOfBirth || '2000-01-01',
@@ -227,156 +206,71 @@ export function profilesAreCompatible(current: PublicMemberProfile, other: Publi
   );
 }
 
-function isPublicMemberProfile(value: unknown): value is PublicMemberProfile {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const profile = value as Partial<PublicMemberProfile>;
-
-  return Boolean(
-    profile.uid &&
-      profile.nickname &&
-      profile.dateOfBirth &&
-      profile.gender &&
-      profile.preference &&
-      profile.ageRange &&
-      Array.isArray(profile.interests)
-  );
-}
-
-export async function blockedUserIdsFor(db: Firestore, currentUid: string) {
-  const blockedIds = new Set<string>();
-  const [blockedByMe, blockingMe] = await Promise.all([
-    getDocs(query(collection(db, LIVE_BLOCK_COLLECTION), where('blockerId', '==', currentUid), limit(100))),
-    getDocs(query(collection(db, LIVE_BLOCK_COLLECTION), where('blockedId', '==', currentUid), limit(100)))
-  ]);
-
-  blockedByMe.docs.forEach((item) => {
-    const blockedId = String(item.data().blockedId ?? '');
-
-    if (blockedId) {
-      blockedIds.add(blockedId);
-    }
-  });
-  blockingMe.docs.forEach((item) => {
-    const blockerId = String(item.data().blockerId ?? '');
-
-    if (blockerId) {
-      blockedIds.add(blockerId);
-    }
-  });
-
-  return blockedIds;
-}
-
 export async function publishRegisteredUserProfile(profile: UserProfile) {
-  if (shouldUseSupabase()) {
-    const { getCurrentSupabaseUser, getSupabaseClient } = await import('./supabaseClient');
-    const supabase = getSupabaseClient();
-    const user = await getCurrentSupabaseUser();
+  const supabase = getSupabaseClient();
+  const user = await getCurrentSupabaseUser();
 
-    if (!supabase || !user) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from('public_profiles')
-      .upsert(supabasePublicProfileRowFromProfile(profile, user.id));
-
-    if (error) {
-      throw new Error(error.message || supabaseMissingConfigMessage());
-    }
-
+  if (!supabase || !user) {
     return;
   }
 
-  const db = getRegisteredDb();
-  const uid = getCurrentFirebaseUserId();
+  const { error } = await supabase
+    .from('public_profiles')
+    .upsert(supabasePublicProfileRowFromProfile(profile, user.id));
 
-  if (!db || !uid || uid.startsWith('local-')) {
-    return;
+  if (error) {
+    throw new Error(error.message || supabaseMissingConfigMessage());
   }
-
-  const publicProfile = publicProfileFromUserProfile(profile, uid);
-
-  await setDoc(
-    doc(db, LIVE_PROFILE_COLLECTION, uid),
-    {
-      ...publicProfile,
-      updatedAt: serverTimestamp()
-    },
-    { merge: true }
-  );
 }
 
 export async function listRegisteredMemberProfiles(profile: UserProfile, maxCount = 40) {
-  if (shouldUseSupabase()) {
-    const { getCurrentSupabaseUser, getSupabaseClient } = await import('./supabaseClient');
-    const supabase = getSupabaseClient();
-    const user = await getCurrentSupabaseUser();
+  const supabase = getSupabaseClient();
+  const user = await getCurrentSupabaseUser();
 
-    if (!supabase || !user) {
-      return [];
-    }
-
-    await publishRegisteredUserProfile(profile).catch(() => undefined);
-
-    const currentPublicProfile = publicProfileFromUserProfile(profile, user.id);
-    const { data: blockRows } = await supabase
-      .from('blocks')
-      .select('blocker_id, blocked_id')
-      .or(`blocker_id.eq.${user.id},blocked_id.eq.${user.id}`)
-      .limit(200);
-    const blockedIds = new Set<string>();
-
-    ((blockRows ?? []) as SupabaseBlockRow[]).forEach((row) => {
-      const blockerId = row.blocker_id ?? '';
-      const blockedId = row.blocked_id ?? '';
-
-      if (blockerId === user.id && blockedId) {
-        blockedIds.add(blockedId);
-      }
-
-      if (blockedId === user.id && blockerId) {
-        blockedIds.add(blockerId);
-      }
-    });
-
-    const { data, error } = await supabase
-      .from('public_profiles')
-      .select('*')
-      .limit(maxCount + 20);
-
-    if (error) {
-      throw new Error(error.message || supabaseMissingConfigMessage());
-    }
-
-    return ((data ?? []) as SupabasePublicProfileRow[])
-      .map(publicProfileFromSupabaseRow)
-      .filter((member) => member.uid !== user.id)
-      .filter((member) => !blockedIds.has(member.uid))
-      .filter((member) => profilesAreCompatible(currentPublicProfile, member))
-      .slice(0, maxCount);
-  }
-
-  const db = getRegisteredDb();
-  const currentUid = getCurrentFirebaseUserId() ?? profile.id;
-
-  if (!db || !currentUid || currentUid.startsWith('local-')) {
+  if (!supabase || !user) {
     return [];
   }
 
   await publishRegisteredUserProfile(profile).catch(() => undefined);
 
-  const currentPublicProfile = publicProfileFromUserProfile(profile, currentUid);
-  const blockedIds = await blockedUserIdsFor(db, currentUid).catch(() => new Set<string>());
-  const snapshot = await getDocs(query(collection(db, LIVE_PROFILE_COLLECTION), limit(maxCount + 20)));
+  const currentPublicProfile = publicProfileFromUserProfile(profile, user.id);
+  const { data: blockRows, error: blockError } = await supabase
+    .from('blocks')
+    .select('blocker_id, blocked_id')
+    .or(`blocker_id.eq.${user.id},blocked_id.eq.${user.id}`)
+    .limit(200);
 
-  return snapshot.docs
-    .map((item) => item.data())
-    .filter(isPublicMemberProfile)
-    .filter((member) => member.uid !== currentUid)
+  if (blockError) {
+    throw new Error(blockError.message || supabaseMissingConfigMessage());
+  }
+
+  const blockedIds = new Set<string>();
+
+  ((blockRows ?? []) as SupabaseBlockRow[]).forEach((row) => {
+    const blockerId = row.blocker_id ?? '';
+    const blockedId = row.blocked_id ?? '';
+
+    if (blockerId === user.id && blockedId) {
+      blockedIds.add(blockedId);
+    }
+
+    if (blockedId === user.id && blockerId) {
+      blockedIds.add(blockerId);
+    }
+  });
+
+  const { data, error } = await supabase
+    .from('public_profiles')
+    .select('*')
+    .limit(maxCount + 20);
+
+  if (error) {
+    throw new Error(error.message || supabaseMissingConfigMessage());
+  }
+
+  return ((data ?? []) as SupabasePublicProfileRow[])
+    .map(publicProfileFromSupabaseRow)
+    .filter((member) => member.uid !== user.id)
     .filter((member) => !blockedIds.has(member.uid))
     .filter((member) => profilesAreCompatible(currentPublicProfile, member))
     .slice(0, maxCount);

@@ -17,6 +17,7 @@ import { VideoCallStage } from '../components/VideoCallStage';
 import { appServices } from '../services/localAppServices';
 import {
   normalizeUserEconomy,
+  recordVideoWatched,
   spendDailyLike,
   spendSuperLike
 } from '../services/userFeatureService';
@@ -28,7 +29,7 @@ import {
   startLiveVideoMatching,
   subscribeLiveVideoMatchState,
   type LiveVideoSession
-} from '../services/firebaseVideoMatchService';
+} from '../services/liveVideoMatchService';
 import { colors } from '../theme';
 import type { Candidate, UserProfile } from '../types';
 
@@ -164,6 +165,7 @@ export function VideoNearbyScreen({
         cancelSearchRef.current = null;
         setActiveSession(session);
         setVideoState('matched');
+        onProfileUpdate?.(recordVideoWatched(profile));
         matchedTimerRef.current = setTimeout(() => {
           setVideoState('calling');
         }, 1200);

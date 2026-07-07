@@ -2,6 +2,7 @@ import type { ProfileVerification, SubscriptionAccess, UserEconomy, UserProfile 
 
 const FREE_DAILY_LIKES = 20;
 export const REWARDED_AD_LIKES = 5;
+export const BASE_REWARD_XP_GOAL = 2000;
 
 export type UserFeatureResult = {
   ok: boolean;
@@ -19,6 +20,62 @@ function clampCount(value: unknown, fallback = 0) {
   return Math.max(0, Math.floor(typeof value === 'number' && Number.isFinite(value) ? value : fallback));
 }
 
+function clampLevel(value: unknown) {
+  return Math.max(1, Math.floor(typeof value === 'number' && Number.isFinite(value) ? value : 1));
+}
+
+function cleanClaimedMissionIds(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function sameLocalDate(a?: string, b = new Date()) {
+  if (!a) {
+    return false;
+  }
+
+  const parsed = new Date(a);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+
+  return parsed.getFullYear() === b.getFullYear()
+    && parsed.getMonth() === b.getMonth()
+    && parsed.getDate() === b.getDate();
+}
+
+export function rewardXpGoalForLevel(level: number) {
+  return BASE_REWARD_XP_GOAL + Math.max(0, level - 1) * 250;
+}
+
+function applyRewardXp(economy: UserEconomy, xp: number): UserEconomy {
+  let rewardLevel = clampLevel(economy.rewardLevel);
+  let rewardXp = clampCount(economy.rewardXp) + Math.max(0, Math.floor(xp));
+  let coins = clampCount(economy.coins);
+
+  while (rewardXp >= rewardXpGoalForLevel(rewardLevel)) {
+    rewardXp -= rewardXpGoalForLevel(rewardLevel);
+    rewardLevel += 1;
+    coins += 50;
+  }
+
+  return {
+    ...economy,
+    coins,
+    rewardLevel,
+    rewardXp
+  };
+}
+
+function withRewardXp(profile: UserProfile, xp: number, economyPatch?: Partial<UserEconomy>): UserProfile {
+  const economy = normalizeUserEconomy(profile.economy);
+
+  return {
+    ...profile,
+    economy: applyRewardXp({ ...economy, ...economyPatch }, xp)
+  };
+}
+
 export function normalizeUserEconomy(economy?: Partial<UserEconomy>, now = new Date()): UserEconomy {
   const resetAtMs = economy?.dailyLikesResetAt ? Date.parse(economy.dailyLikesResetAt) : 0;
   const shouldResetDailyLikes = !resetAtMs || resetAtMs <= now.getTime();
@@ -33,7 +90,16 @@ export function normalizeUserEconomy(economy?: Partial<UserEconomy>, now = new D
     coins: clampCount(economy?.coins),
     gifts: clampCount(economy?.gifts),
     profileSpotlights: clampCount(economy?.profileSpotlights),
-    undoSwipes: clampCount(economy?.undoSwipes)
+    undoSwipes: clampCount(economy?.undoSwipes),
+    rewardLevel: clampLevel(economy?.rewardLevel),
+    rewardXp: clampCount(economy?.rewardXp),
+    dailyRewardStreak: clampCount(economy?.dailyRewardStreak),
+    dailyRewardClaimedAt: economy?.dailyRewardClaimedAt,
+    missionLikes: clampCount(economy?.missionLikes),
+    conversationsStarted: clampCount(economy?.conversationsStarted),
+    videosWatched: clampCount(economy?.videosWatched),
+    claimedMissionIds: cleanClaimedMissionIds(economy?.claimedMissionIds),
+    profileViews: clampCount(economy?.profileViews)
   };
 }
 
@@ -66,9 +132,13 @@ export function spendDailyLike(profile: UserProfile, targetName = 'this member')
   const economy = normalizeUserEconomy(profile.economy);
 
   if (hasUnlimitedLikes(profile.subscription)) {
+    const nextProfile = withRewardXp(profile, 12, {
+      missionLikes: economy.missionLikes + 1
+    });
+
     return {
       ok: true,
-      profile: { ...profile, economy },
+      profile: nextProfile,
       message: `Liked ${targetName}. Your membership includes unlimited likes.`
     };
   }
@@ -83,12 +153,13 @@ export function spendDailyLike(profile: UserProfile, targetName = 'this member')
 
   const nextEconomy = {
     ...economy,
-    dailyLikesRemaining: economy.dailyLikesRemaining - 1
+    dailyLikesRemaining: economy.dailyLikesRemaining - 1,
+    missionLikes: economy.missionLikes + 1
   };
 
   return {
     ok: true,
-    profile: { ...profile, economy: nextEconomy },
+    profile: { ...profile, economy: applyRewardXp(nextEconomy, 12) },
     message: `Liked ${targetName}. ${nextEconomy.dailyLikesRemaining} free likes left today.`
   };
 }
@@ -114,12 +185,13 @@ export function spendSuperLike(profile: UserProfile, targetName = 'this member')
 
   const nextEconomy = {
     ...economy,
-    superLikes: economy.superLikes - 1
+    superLikes: economy.superLikes - 1,
+    missionLikes: economy.missionLikes + 1
   };
 
   return {
     ok: true,
-    profile: { ...profile, economy: nextEconomy },
+    profile: { ...profile, economy: applyRewardXp(nextEconomy, 24) },
     message: `Super Like sent to ${targetName}. ${nextEconomy.superLikes} left.`
   };
 }
@@ -150,8 +222,79 @@ export function spendBoost(profile: UserProfile): UserFeatureResult {
 
   return {
     ok: true,
-    profile: { ...profile, economy: nextEconomy },
+    profile: { ...profile, economy: applyRewardXp(nextEconomy, 35) },
     message: `Boost active. ${nextEconomy.boosts} boosts left.`
+  };
+}
+
+export function recordConversationStarted(profile: UserProfile): UserProfile {
+  const economy = normalizeUserEconomy(profile.economy);
+
+  return withRewardXp(profile, 30, {
+    conversationsStarted: economy.conversationsStarted + 1
+  });
+}
+
+export function recordVideoWatched(profile: UserProfile): UserProfile {
+  const economy = normalizeUserEconomy(profile.economy);
+
+  return withRewardXp(profile, 15, {
+    videosWatched: economy.videosWatched + 1
+  });
+}
+
+export function claimDailyReward(profile: UserProfile): UserFeatureResult {
+  const economy = normalizeUserEconomy(profile.economy);
+
+  if (sameLocalDate(economy.dailyRewardClaimedAt)) {
+    return {
+      ok: false,
+      profile: { ...profile, economy },
+      message: 'Daily reward already claimed today. Come back tomorrow.'
+    };
+  }
+
+  const nextEconomy = {
+    ...economy,
+    coins: economy.coins + 20,
+    gifts: economy.gifts + 1,
+    dailyRewardStreak: economy.dailyRewardStreak + 1,
+    dailyRewardClaimedAt: new Date().toISOString()
+  };
+
+  return {
+    ok: true,
+    profile: { ...profile, economy: applyRewardXp(nextEconomy, 120) },
+    message: 'Daily reward claimed: +20 coins and +120 XP.'
+  };
+}
+
+export function claimMissionReward(
+  profile: UserProfile,
+  missionId: string,
+  rewardCoins: number,
+  rewardXp: number
+): UserFeatureResult {
+  const economy = normalizeUserEconomy(profile.economy);
+
+  if (economy.claimedMissionIds.includes(missionId)) {
+    return {
+      ok: false,
+      profile: { ...profile, economy },
+      message: 'Mission reward already claimed.'
+    };
+  }
+
+  const nextEconomy = {
+    ...economy,
+    coins: economy.coins + rewardCoins,
+    claimedMissionIds: [...economy.claimedMissionIds, missionId]
+  };
+
+  return {
+    ok: true,
+    profile: { ...profile, economy: applyRewardXp(nextEconomy, rewardXp) },
+    message: `Mission complete: +${rewardCoins} coins and +${rewardXp} XP.`
   };
 }
 

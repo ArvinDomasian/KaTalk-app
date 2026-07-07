@@ -1151,11 +1151,11 @@ function ConsentRow({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#BFD7E8'
+    backgroundColor: colors.background
   },
   welcomeRoot: {
     flex: 1,
-    backgroundColor: '#BFD7E8',
+    backgroundColor: colors.background,
     justifyContent: 'space-between'
   },
   welcomeTop: {
@@ -1165,8 +1165,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden'
   },
   welcomeLogo: {
-    color: colors.onAccent,
-    fontSize: 21,
+    color: colors.accent,
+    fontSize: 31,
+    lineHeight: 37,
     fontWeight: '900',
     zIndex: 2
   },
@@ -1186,6 +1187,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 26,
     alignItems: 'center',
     gap: 12,
+    borderTopWidth: 1,
+    borderColor: colors.line,
     backgroundColor: colors.surface
   },
   welcomeTitle: {
@@ -1213,13 +1216,13 @@ const styles = StyleSheet.create({
     gap: 18
   },
   appleAuthButton: {
-    backgroundColor: '#78B8EA'
+    backgroundColor: colors.lavender
   },
   googleAuthButton: {
     backgroundColor: colors.surfaceMuted
   },
   phoneAuthButton: {
-    backgroundColor: '#FBE878'
+    backgroundColor: colors.accent
   },
   authButtonText: {
     flex: 1,
@@ -1261,10 +1264,10 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentSoft
+    backgroundColor: colors.accent
   },
   sendCodeText: {
-    color: colors.accent,
+    color: colors.onAccent,
     fontWeight: '900'
   },
   verificationHint: {
@@ -1297,7 +1300,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FBE878'
+    backgroundColor: colors.accent
   },
   continueAuthText: {
     fontWeight: '900'
@@ -1309,7 +1312,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FBE878'
+    backgroundColor: colors.accent
   },
   passwordResetButton: {
     flex: 1,
@@ -1335,7 +1338,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FBE878'
+    backgroundColor: colors.accent
   },
   getStartedText: {
     fontWeight: '900'
@@ -1344,6 +1347,8 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 24,
     backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
     gap: 8
   },
   formBackButton: {
@@ -1375,7 +1380,7 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 8,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
     padding: 16,
@@ -1395,7 +1400,7 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 46,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.line,
     paddingHorizontal: 12,
@@ -1429,7 +1434,7 @@ const styles = StyleSheet.create({
   },
   chip: {
     minHeight: 40,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1455,7 +1460,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.line,
-    shadowColor: '#96B1C2',
+    shadowColor: colors.accent,
     shadowOpacity: 0.18,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -1529,7 +1534,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
+    borderRadius: 14,
     backgroundColor: colors.surfaceMuted
   },
   segmentActive: {

@@ -16,7 +16,7 @@ import type {
 } from 'react-native-agora';
 import { AppText } from './AppText';
 import { PressableScale } from './PressableScale';
-import { getAgoraJoinCredentials } from '../services/firebaseVideoMatchService';
+import { getAgoraJoinCredentials } from '../services/liveVideoMatchService';
 import { colors } from '../theme';
 import type { UserProfile, VoiceRoom } from '../types';
 

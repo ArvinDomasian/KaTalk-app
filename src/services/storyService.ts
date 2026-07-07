@@ -1,21 +1,11 @@
-import {
-  collection,
-  doc,
-  getFirestore,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  setDoc,
-  type Unsubscribe
-} from 'firebase/firestore';
 import type { UserProfile } from '../types';
-import { shouldUseSupabase, supabaseMissingConfigMessage } from './backendConfig';
-import { getConfiguredFirebaseApp } from './firebaseAuthService';
+import { supabaseMissingConfigMessage } from './backendConfig';
+import { getCurrentSupabaseUser, getSupabaseClient } from './supabaseClient';
 
-const PUBLIC_STORY_COLLECTION = 'publicStories';
 const PUBLIC_STORY_STORAGE_KEY = 'katalk.publicStories.v1';
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
+
+type Unsubscribe = () => void;
 
 export type PublicStory = {
   id: string;
@@ -100,6 +90,18 @@ function loadStoredStories() {
 
 const localStories: PublicStory[] = loadStoredStories();
 
+function visibleLocalStories() {
+  const now = Date.now();
+
+  for (let index = localStories.length - 1; index >= 0; index -= 1) {
+    if (localStories[index].expiresAt.getTime() <= now) {
+      localStories.splice(index, 1);
+    }
+  }
+
+  return localStories.slice().sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+}
+
 function saveStoredStories() {
   const storage = getBrowserStorage();
 
@@ -137,48 +139,11 @@ function mergeStoredStoriesIntoMemory() {
   loadStoredStories().forEach(upsertLocalStory);
 }
 
-function visibleLocalStories() {
-  const now = Date.now();
-
-  for (let index = localStories.length - 1; index >= 0; index -= 1) {
-    if (localStories[index].expiresAt.getTime() <= now) {
-      localStories.splice(index, 1);
-    }
-  }
-
-  return localStories.slice().sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
-}
-
-function storyDb() {
-  const app = getConfiguredFirebaseApp();
-  return app ? getFirestore(app) : null;
-}
-
-function publicStoriesCollection() {
-  const db = storyDb();
-  return db ? collection(db, PUBLIC_STORY_COLLECTION) : null;
-}
-
 function markMine(stories: PublicStory[], currentUserId: string) {
   return stories.map((story) => ({
     ...story,
     mine: story.authorId === currentUserId
   }));
-}
-
-function storyFromSnapshot(id: string, data: Record<string, unknown>): PublicStory {
-  const createdAtMs = typeof data.createdAtMs === 'number' ? data.createdAtMs : Date.now();
-  const expiresAtMs = typeof data.expiresAtMs === 'number' ? data.expiresAtMs : createdAtMs + STORY_TTL_MS;
-
-  return {
-    id,
-    authorId: String(data.authorId ?? ''),
-    nickname: String(data.nickname ?? 'KaTalk member'),
-    photoUrl: data.photoUrl ? String(data.photoUrl) : undefined,
-    text: String(data.text ?? ''),
-    createdAt: new Date(createdAtMs),
-    expiresAt: new Date(expiresAtMs)
-  };
 }
 
 function storyFromSupabaseRow(row: Record<string, unknown>): PublicStory {
@@ -204,89 +169,56 @@ export function subscribePublicStories(
   mergeStoredStoriesIntoMemory();
   onStories(markMine(visibleLocalStories(), profile.id));
 
-  if (shouldUseSupabase()) {
-    let cleanup = () => undefined;
-    let disposed = false;
+  const supabase = getSupabaseClient();
 
-    void import('./supabaseClient').then(async ({ getCurrentSupabaseUser, getSupabaseClient }) => {
-      if (disposed) {
-        return;
-      }
-
-      const supabase = getSupabaseClient();
-      const user = await getCurrentSupabaseUser();
-      const currentUserId = user?.id ?? profile.id;
-
-      if (!supabase) {
-        onError(supabaseMissingConfigMessage());
-        return;
-      }
-
-      const supabaseClient = supabase;
-
-      async function loadSupabaseStories() {
-        const { data, error } = await supabaseClient
-          .from('public_stories')
-          .select('*')
-          .gt('expires_at_ms', Date.now())
-          .order('created_at_ms', { ascending: false })
-          .limit(80);
-
-        if (error) {
-          onError(error.message || 'Supabase stories could not load yet.');
-          return;
-        }
-
-        const remoteStories = ((data ?? []) as Record<string, unknown>[])
-          .map(storyFromSupabaseRow)
-          .filter(isActiveStory);
-
-        remoteStories.forEach(upsertLocalStory);
-
-        onStories(markMine(remoteStories, currentUserId));
-      }
-
-      void loadSupabaseStories();
-
-      const channel = supabaseClient
-        .channel('public-stories')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'public_stories' }, () => {
-          void loadSupabaseStories();
-        })
-        .subscribe();
-
-      cleanup = () => {
-        void supabaseClient.removeChannel(channel);
-      };
-    });
-
-    return (() => {
-      disposed = true;
-      cleanup();
-    }) as Unsubscribe;
-  }
-
-  const storiesCollection = publicStoriesCollection();
-
-  if (!storiesCollection) {
+  if (!supabase) {
+    onError(supabaseMissingConfigMessage());
     return (() => undefined) as Unsubscribe;
   }
 
-  return onSnapshot(
-    query(storiesCollection, orderBy('createdAtMs', 'desc')),
-    (snapshot) => {
-      const remoteStories = snapshot.docs
-        .map((item) => storyFromSnapshot(item.id, item.data()))
-        .filter(isActiveStory);
+  const supabaseClient = supabase;
+  let disposed = false;
 
-      remoteStories.forEach(upsertLocalStory);
-      onStories(markMine(remoteStories, profile.id));
-    },
-    (error) => {
-      onStories(markMine(visibleLocalStories(), profile.id));
-      onError(error.message || 'Stories could not load yet.');
+  async function loadSupabaseStories() {
+    if (disposed) {
+      return;
     }
-  );
+
+    const user = await getCurrentSupabaseUser();
+    const currentUserId = user?.id ?? profile.id;
+    const { data, error } = await supabaseClient
+      .from('public_stories')
+      .select('*')
+      .gt('expires_at_ms', Date.now())
+      .order('created_at_ms', { ascending: false })
+      .limit(80);
+
+    if (error) {
+      onError(error.message || 'Supabase stories could not load yet.');
+      return;
+    }
+
+    const remoteStories = ((data ?? []) as Record<string, unknown>[])
+      .map(storyFromSupabaseRow)
+      .filter(isActiveStory);
+
+    remoteStories.forEach(upsertLocalStory);
+    onStories(markMine(remoteStories, currentUserId));
+  }
+
+  void loadSupabaseStories();
+
+  const channel = supabaseClient
+    .channel('public-stories')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'public_stories' }, () => {
+      void loadSupabaseStories();
+    })
+    .subscribe();
+
+  return (() => {
+    disposed = true;
+    void supabaseClient.removeChannel(channel);
+  }) as Unsubscribe;
 }
 
 export async function createPublicStory(profile: UserProfile, text: string) {
@@ -296,54 +228,18 @@ export async function createPublicStory(profile: UserProfile, text: string) {
     throw new Error('Write a short story first.');
   }
 
-  const createdAtMs = Date.now();
-  const expiresAtMs = createdAtMs + STORY_TTL_MS;
-  const storyId = `story-${profile.id}-${createdAtMs}`;
+  const supabase = getSupabaseClient();
+  const user = await getCurrentSupabaseUser();
 
-  if (shouldUseSupabase()) {
-    const { getCurrentSupabaseUser, getSupabaseClient } = await import('./supabaseClient');
-    const supabase = getSupabaseClient();
-    const user = await getCurrentSupabaseUser();
-
-    if (!supabase || !user) {
-      throw new Error(supabaseMissingConfigMessage());
-    }
-
-    const remoteStory: PublicStory = {
-      id: `story-${user.id}-${createdAtMs}`,
-      authorId: user.id,
-      nickname: profile.nickname || 'KaTalk member',
-      photoUrl: profile.avatarUrl,
-      text: cleanText,
-      createdAt: new Date(createdAtMs),
-      expiresAt: new Date(expiresAtMs),
-      mine: true
-    };
-
-    const { error } = await supabase.from('public_stories').insert({
-      id: remoteStory.id,
-      profile_id: user.id,
-      author_nickname: remoteStory.nickname,
-      photo_url: remoteStory.photoUrl ?? null,
-      body: remoteStory.text,
-      created_at_ms: createdAtMs,
-      expires_at_ms: expiresAtMs,
-      created_at: new Date(createdAtMs).toISOString(),
-      updated_at: new Date(createdAtMs).toISOString()
-    });
-
-    if (error) {
-      throw new Error(error.message || 'Story could not be posted yet.');
-    }
-
-    upsertLocalStory(remoteStory);
-
-    return remoteStory;
+  if (!supabase || !user) {
+    throw new Error(supabaseMissingConfigMessage());
   }
 
-  const story: PublicStory = {
-    id: storyId,
-    authorId: profile.id,
+  const createdAtMs = Date.now();
+  const expiresAtMs = createdAtMs + STORY_TTL_MS;
+  const remoteStory: PublicStory = {
+    id: `story-${user.id}-${createdAtMs}`,
+    authorId: user.id,
     nickname: profile.nickname || 'KaTalk member',
     photoUrl: profile.avatarUrl,
     text: cleanText,
@@ -352,23 +248,25 @@ export async function createPublicStory(profile: UserProfile, text: string) {
     mine: true
   };
 
-  upsertLocalStory(story);
+  const { error } = await supabase.from('public_stories').insert({
+    id: remoteStory.id,
+    profile_id: user.id,
+    author_nickname: remoteStory.nickname,
+    photo_url: remoteStory.photoUrl ?? null,
+    body: remoteStory.text,
+    created_at_ms: createdAtMs,
+    expires_at_ms: expiresAtMs,
+    created_at: new Date(createdAtMs).toISOString(),
+    updated_at: new Date(createdAtMs).toISOString()
+  });
 
-  const storiesCollection = publicStoriesCollection();
-
-  if (storiesCollection) {
-    void setDoc(doc(storiesCollection, story.id), {
-      authorId: story.authorId,
-      nickname: story.nickname,
-      photoUrl: story.photoUrl ?? null,
-      text: story.text,
-      createdAtMs,
-      expiresAtMs,
-      createdAt: serverTimestamp()
-    }).catch(() => undefined);
+  if (error) {
+    throw new Error(error.message || 'Story could not be posted yet.');
   }
 
-  return story;
+  upsertLocalStory(remoteStory);
+
+  return remoteStory;
 }
 
 export function storyErrorMessage(error: unknown) {

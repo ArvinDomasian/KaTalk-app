@@ -20,7 +20,7 @@ import { PressableScale } from './PressableScale';
 import {
   getAgoraJoinCredentials,
   type LiveVideoSession
-} from '../services/firebaseVideoMatchService';
+} from '../services/liveVideoMatchService';
 import { colors } from '../theme';
 import type { UserProfile } from '../types';
 

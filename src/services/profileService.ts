@@ -1,24 +1,13 @@
-import { shouldUseSupabase } from './backendConfig';
-import {
-  loadCurrentFirebaseUserProfile,
-  saveFirebaseUserProfile
-} from './firebaseProfileService';
 import type { UserProfile } from '../types';
+import {
+  loadCurrentSupabaseUserProfile,
+  saveSupabaseUserProfile
+} from './supabaseProfileService';
 
-export async function saveUserProfile(profile: UserProfile) {
-  if (!shouldUseSupabase()) {
-    return saveFirebaseUserProfile(profile);
-  }
-
-  const { saveSupabaseUserProfile } = await import('./supabaseProfileService');
+export function saveUserProfile(profile: UserProfile) {
   return saveSupabaseUserProfile(profile);
 }
 
-export async function loadCurrentUserProfile(timeoutMs = 6000) {
-  if (!shouldUseSupabase()) {
-    return loadCurrentFirebaseUserProfile(timeoutMs);
-  }
-
-  const { loadCurrentSupabaseUserProfile } = await import('./supabaseProfileService');
+export function loadCurrentUserProfile(timeoutMs = 6000) {
   return loadCurrentSupabaseUserProfile(timeoutMs);
 }

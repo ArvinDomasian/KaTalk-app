@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from './AppText';
-import type { LiveVideoSession } from '../services/firebaseVideoMatchService';
+import type { LiveVideoSession } from '../services/liveVideoMatchService';
 import { colors } from '../theme';
 import type { UserProfile } from '../types';
 

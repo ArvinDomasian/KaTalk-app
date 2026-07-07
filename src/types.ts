@@ -1,4 +1,4 @@
-export type ActiveTab = 'message' | 'rooms' | 'video' | 'profile';
+export type ActiveTab = 'message' | 'rooms' | 'video' | 'rewards' | 'profile';
 
 export type ThemeMode = 'light' | 'dark';
 
@@ -42,6 +42,15 @@ export type UserEconomy = {
   gifts: number;
   profileSpotlights: number;
   undoSwipes: number;
+  rewardLevel: number;
+  rewardXp: number;
+  dailyRewardStreak: number;
+  dailyRewardClaimedAt?: string;
+  missionLikes: number;
+  conversationsStarted: number;
+  videosWatched: number;
+  claimedMissionIds: string[];
+  profileViews: number;
 };
 
 export type ProfileVerificationStatus = 'not_started' | 'manual_pending' | 'fast_track_pending' | 'verified';

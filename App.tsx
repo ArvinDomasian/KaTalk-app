@@ -8,6 +8,7 @@ import { MessageMatchScreen } from './src/screens/MessageMatchScreen';
 import { VoiceRoomsScreen } from './src/screens/VoiceRoomsScreen';
 import { VideoNearbyScreen } from './src/screens/VideoNearbyScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
+import { RewardsScreen } from './src/screens/RewardsScreen';
 import { AdminDashboardScreen } from './src/screens/AdminDashboardScreen';
 import { LoadingScreen } from './src/screens/LoadingScreen';
 import { AppText } from './src/components/AppText';
@@ -25,12 +26,13 @@ import {
 import { colors } from './src/theme';
 import type { ActiveTab, ThemeMode, UserProfile } from './src/types';
 
-type TabIconName = 'message' | 'rooms' | 'video' | 'profile';
+type TabIconName = 'message' | 'rooms' | 'video' | 'rewards' | 'profile';
 
 const tabs: Array<{ key: ActiveTab; label: string; icon: TabIconName }> = [
-  { key: 'message', label: 'Message', icon: 'message' },
+  { key: 'video', label: 'Discover', icon: 'video' },
+  { key: 'message', label: 'AI Match', icon: 'message' },
   { key: 'rooms', label: 'Rooms', icon: 'rooms' },
-  { key: 'video', label: 'Video', icon: 'video' },
+  { key: 'rewards', label: 'Rewards', icon: 'rewards' },
   { key: 'profile', label: 'Profile', icon: 'profile' }
 ];
 
@@ -177,6 +179,7 @@ export default function App() {
           profile={profile}
           darkMode={darkMode}
           onChattingStateChange={setIsMessageChatting}
+          onProfileUpdate={updateProfile}
         />
       );
     }
@@ -192,6 +195,17 @@ export default function App() {
           darkMode={darkMode}
           onProfileUpdate={updateProfile}
           onCallStateChange={setIsVideoCalling}
+        />
+      );
+    }
+
+    if (activeTab === 'rewards') {
+      return (
+        <RewardsScreen
+          profile={profile}
+          darkMode={darkMode}
+          onProfileUpdate={updateProfile}
+          onOpenPremium={() => setActiveTab('profile')}
         />
       );
     }
@@ -287,6 +301,16 @@ function AppTabGlyph({ name, color }: { name: TabIconName; color: string }) {
     );
   }
 
+  if (name === 'rewards') {
+    return (
+      <View style={styles.glyphBox}>
+        <View style={[styles.trophyCup, { borderColor: color }]} />
+        <View style={[styles.trophyStem, { backgroundColor: color }]} />
+        <View style={[styles.trophyBase, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.glyphBox}>
       <View style={[styles.profileHead, { backgroundColor: color }]} />
@@ -302,46 +326,46 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   rootDark: {
-    backgroundColor: '#101217'
+    backgroundColor: colors.background
   },
   shell: {
     flex: 1
   },
   shellWithTabs: {
-    paddingBottom: 82
+    paddingBottom: 92
   },
   tabBar: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 12,
+    left: 12,
+    right: 12,
+    bottom: 10,
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
     borderRadius: 28,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.surface,
-    shadowColor: '#8FA5B5',
-    shadowOpacity: 0.2,
-    shadowRadius: 18,
+    shadowColor: '#F238A6',
+    shadowOpacity: 0.24,
+    shadowRadius: 20,
     shadowOffset: { width: 0, height: 8 },
     elevation: 6
   },
   tabBarDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#171A22',
+    borderColor: '#31223D',
+    backgroundColor: '#10111C',
     shadowColor: '#000000',
     shadowOpacity: 0.34
   },
   tabButton: {
     flex: 1,
-    minHeight: 48,
+    minHeight: 54,
     borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4
+    gap: 3
   },
   tabButtonActive: {
     backgroundColor: colors.accent
@@ -432,8 +456,26 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 8,
     borderBottomWidth: 0
   },
+  trophyCup: {
+    width: 15,
+    height: 11,
+    borderWidth: 2,
+    borderTopWidth: 3,
+    borderBottomLeftRadius: 7,
+    borderBottomRightRadius: 7
+  },
+  trophyStem: {
+    width: 3,
+    height: 5,
+    borderRadius: 2
+  },
+  trophyBase: {
+    width: 13,
+    height: 2,
+    borderRadius: 1
+  },
   tabLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: colors.muted,
     fontWeight: '700'
   },

@@ -89,5 +89,5 @@ iOS submissions go to App Store Connect/TestFlight first. To release publicly, f
 - Prepare App Store and Play Store screenshots.
 - Prepare store description, keywords, category, and age rating.
 - Complete privacy/data safety forms for location, camera, microphone, account info, user content, and moderation.
-- Make sure Firebase production rules are locked down.
+- Make sure Supabase Row Level Security policies are locked down.
 - Make sure reporting, blocking, moderation, and adult-only controls are ready.
