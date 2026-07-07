@@ -22,11 +22,14 @@ import {
   recordLiveMessageSafety,
   saveLiveMessageMatch,
   sendLiveMessage,
+  sendSavedMatchMessage,
   startLiveMessageMatching,
   subscribeLiveMatchState,
-  subscribeLiveMessages
+  subscribeLiveMessages,
+  subscribeSavedMatchMessages
 } from '../services/firebaseMessageMatchService';
 import { appServices } from '../services/localAppServices';
+import { registeredMemberErrorMessage } from '../services/registeredUserService';
 import {
   createPublicStory,
   subscribePublicStories,
@@ -79,6 +82,9 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
   const [memberLoadNotice, setMemberLoadNotice] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [inboxDraft, setInboxDraft] = useState('');
+  const [activeSavedMatch, setActiveSavedMatch] = useState<SavedMatch | null>(null);
+  const [savedChatMessages, setSavedChatMessages] = useState<Message[]>([]);
+  const [savedChatDraft, setSavedChatDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const matchCompleteRef = useRef(false);
   const returnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,6 +93,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
   const liveQueueUnsubscribeRef = useRef<null | (() => void)>(null);
   const liveMessagesUnsubscribeRef = useRef<null | (() => void)>(null);
   const liveStateUnsubscribeRef = useRef<null | (() => void)>(null);
+  const savedChatUnsubscribeRef = useRef<null | (() => void)>(null);
   const timerWiggle = useRef(new Animated.Value(0)).current;
 
   const matchComplete = savedByMe && savedByMatch;
@@ -125,6 +132,7 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
   useEffect(() => {
     return () => {
       clearLiveSubscriptions();
+      clearSavedChatSubscription();
       clearReturnTimer();
       clearMatchWindowTimer();
       onChattingStateChange?.(false);
@@ -198,6 +206,11 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     liveQueueUnsubscribeRef.current = null;
     liveMessagesUnsubscribeRef.current = null;
     liveStateUnsubscribeRef.current = null;
+  }
+
+  function clearSavedChatSubscription() {
+    savedChatUnsubscribeRef.current?.();
+    savedChatUnsubscribeRef.current = null;
   }
 
   function clearReturnTimer() {
@@ -351,10 +364,12 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
         ]);
       },
       onMatched(session) {
+        liveQueueUnsubscribeRef.current?.();
         liveQueueUnsubscribeRef.current = null;
         showFoundMatch(session, true);
       },
       onError(message) {
+        clearLiveSubscriptions();
         clearMatchWindowTimer();
         setMatchWindowVisible(false);
         setMatchWindowCandidate(null);
@@ -382,7 +397,11 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
       clearLiveSubscriptions();
 
       if (liveMatchId) {
-        void closeLiveMessageMatch(liveMatchId, matchCompleteRef.current ? 'saved' : 'expired');
+        void closeLiveMessageMatch(liveMatchId, matchCompleteRef.current ? 'saved' : 'expired').then((finalStatus) => {
+          if (matchCompleteRef.current || finalStatus === 'saved') {
+            void refreshSavedMatches();
+          }
+        });
       } else if (matchCompleteRef.current && candidate) {
         void appServices.savedMatches.save(profile, candidate).then(refreshSavedMatches);
       }
@@ -435,6 +454,9 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
       }
     ]);
     setStatus(nextStatus);
+    if (serverStatus === 'saved') {
+      void refreshSavedMatches();
+    }
     scheduleReturnToMatching(
       serverStatus === 'saved'
         ? 'Last chat ended. You both saved the match.'
@@ -464,9 +486,9 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
           messages: []
         }))
       );
-    } catch {
+    } catch (error) {
       setInboxThreads([]);
-      setMemberLoadNotice('Registered members could not load yet. Check your backend setup and connection.');
+      setMemberLoadNotice(registeredMemberErrorMessage(error));
     } finally {
       setIsLoadingMembers(false);
     }
@@ -633,6 +655,43 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
     setInboxDraft('');
   }
 
+  function openSavedMatch(match: SavedMatch) {
+    clearSavedChatSubscription();
+    setActiveSavedMatch(match);
+    setSavedChatMessages([]);
+    setSavedChatDraft('');
+    savedChatUnsubscribeRef.current = subscribeSavedMatchMessages(
+      match.id,
+      setSavedChatMessages,
+      (message) => Alert.alert('Saved chat issue', message)
+    );
+  }
+
+  function closeSavedMatchChat() {
+    clearSavedChatSubscription();
+    setActiveSavedMatch(null);
+    setSavedChatMessages([]);
+    setSavedChatDraft('');
+  }
+
+  async function sendSavedChatMessage() {
+    const text = savedChatDraft.trim();
+    const targetMatch = activeSavedMatch;
+
+    if (!text || !targetMatch) {
+      return;
+    }
+
+    setSavedChatDraft('');
+
+    try {
+      await sendSavedMatchMessage(targetMatch.id, text);
+    } catch {
+      Alert.alert('Message not sent', 'Saved chat could not send this message yet.');
+      setSavedChatDraft(text);
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       style={[styles.root, darkMode && styles.rootDark]}
@@ -667,6 +726,15 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
           setActiveThreadId(null);
           setInboxDraft('');
         }}
+      />
+      <SavedMatchChatModal
+        match={activeSavedMatch}
+        messages={savedChatMessages}
+        draft={savedChatDraft}
+        darkMode={darkMode}
+        onDraftChange={setSavedChatDraft}
+        onSend={sendSavedChatMessage}
+        onClose={closeSavedMatchChat}
       />
       {status === 'idle' || status === 'searching' ? (
         <ScrollView contentContainerStyle={styles.chatHome}>
@@ -808,7 +876,12 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
             <View style={[styles.savedCard, darkMode && styles.cardDark]}>
               <AppText style={[styles.savedTitle, darkMode && styles.textOnDark]}>Saved matches</AppText>
               {savedMatches.map((match) => (
-                <View key={match.id} style={styles.savedRow}>
+                <PressableScale
+                  key={match.id}
+                  accessibilityRole="button"
+                  onPress={() => openSavedMatch(match)}
+                  style={styles.savedRow}
+                >
                   <MemberAvatar
                     name={match.candidate.nickname}
                     photoUrl={match.candidate.photoUrl}
@@ -816,12 +889,12 @@ export function MessageMatchScreen({ profile, darkMode = false, onChattingStateC
                     size={38}
                   />
                   <View style={styles.savedInfo}>
-                    <AppText style={[styles.savedName, darkMode && styles.textOnDark]}>Anonymous saved match</AppText>
+                    <AppText style={[styles.savedName, darkMode && styles.textOnDark]}>Saved chat</AppText>
                     <AppText style={styles.savedMeta}>
-                      {match.candidate.interests.join(' / ')}
+                      {match.candidate.interests.join(' / ')} - tap to message
                     </AppText>
                   </View>
-                </View>
+                </PressableScale>
               ))}
             </View>
           ) : null}
@@ -1223,6 +1296,111 @@ function InboxThreadModal({
                 </PressableScale>
               </View>
             ) : null}
+          </View>
+        ) : null}
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function SavedMatchChatModal({
+  match,
+  messages,
+  draft,
+  darkMode,
+  onDraftChange,
+  onSend,
+  onClose
+}: {
+  match: SavedMatch | null;
+  messages: Message[];
+  draft: string;
+  darkMode: boolean;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal transparent visible={Boolean(match)} animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={styles.inboxModalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <PressableScale accessibilityRole="button" onPress={onClose} style={styles.socialModalBackdrop} />
+        {match ? (
+          <View style={[styles.inboxSheet, darkMode && styles.cardDark]}>
+            <View style={styles.inboxHeader}>
+              <MemberAvatar
+                name={match.candidate.nickname}
+                photoUrl={match.candidate.photoUrl}
+                color={match.candidate.avatarColor}
+                size={44}
+              />
+              <View style={styles.inboxTitleBlock}>
+                <AppText style={[styles.inboxName, darkMode && styles.textOnDark]}>Saved chat</AppText>
+                <AppText style={styles.inboxMeta}>
+                  {match.candidate.interests.join(' / ')}
+                </AppText>
+              </View>
+              <PressableScale accessibilityRole="button" onPress={onClose} style={[styles.socialCloseButton, darkMode && styles.roundIconDark]}>
+                <AppText style={[styles.socialCloseText, darkMode && styles.textOnDark]}>X</AppText>
+              </PressableScale>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.inboxMessages}>
+              {messages.length === 0 ? (
+                <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
+                  <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
+                    Saved match inbox
+                  </AppText>
+                  <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+                    This chat stays open because you both saved the 2-minute match.
+                  </AppText>
+                </View>
+              ) : null}
+              {messages.map((message) => (
+                <View
+                  key={message.id}
+                  style={[
+                    styles.inboxBubble,
+                    darkMode && styles.bubbleDark,
+                    message.sender === 'me' && styles.inboxBubbleMine,
+                    message.sender === 'system' && styles.systemBubble,
+                    darkMode && message.sender === 'system' && styles.systemBubbleDark
+                  ]}
+                >
+                  <AppText
+                    style={[
+                      styles.inboxBubbleText,
+                      darkMode && message.sender !== 'me' && styles.bubbleTextDark,
+                      message.sender === 'me' && styles.myBubbleText,
+                      message.sender === 'system' && styles.systemText
+                    ]}
+                  >
+                    {message.body}
+                  </AppText>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={[styles.inboxInputRow, darkMode && styles.inputRowDark]}>
+              <TextInput
+                value={draft}
+                onChangeText={onDraftChange}
+                placeholder="Write to your saved match"
+                placeholderTextColor={colors.muted}
+                multiline
+                style={[styles.inboxInput, darkMode && styles.inputDark]}
+              />
+              <PressableScale
+                accessibilityRole="button"
+                disabled={!draft.trim()}
+                onPress={onSend}
+                style={[styles.inboxSendButton, !draft.trim() && styles.inboxSendButtonDisabled]}
+              >
+                <AppText style={styles.sendButtonText}>{'>'}</AppText>
+              </PressableScale>
+            </View>
           </View>
         ) : null}
       </KeyboardAvoidingView>

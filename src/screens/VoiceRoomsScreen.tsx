@@ -7,7 +7,7 @@ import { MemberAvatar } from '../components/MemberAvatar';
 import { PressableScale } from '../components/PressableScale';
 import { VoiceRoomStage } from '../components/VoiceRoomStage';
 import { appServices } from '../services/localAppServices';
-import { avatarColorForId } from '../services/registeredUserService';
+import { avatarColorForId, registeredMemberErrorMessage } from '../services/registeredUserService';
 import { colors } from '../theme';
 import type { UserProfile, VoiceRoom } from '../types';
 
@@ -35,9 +35,9 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
 
     try {
       setRooms(await appServices.rooms.list(profile));
-    } catch {
+    } catch (error) {
       setRooms([]);
-      setRoomLoadNotice('Registered voice members could not load yet. Check your backend setup and connection.');
+      setRoomLoadNotice(registeredMemberErrorMessage(error));
     } finally {
       setIsLoadingRooms(false);
     }

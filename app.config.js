@@ -1,4 +1,43 @@
+const fs = require('fs');
+const path = require('path');
 const appJson = require('./app.json');
+
+function loadLocalEnv() {
+  const envPath = path.join(__dirname, '.env');
+
+  if (!fs.existsSync(envPath)) {
+    return;
+  }
+
+  let lastKey = '';
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith('#')) {
+      return;
+    }
+
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+
+    if (match) {
+      const [, key, rawValue] = match;
+      lastKey = key;
+
+      if (!process.env[key]) {
+        process.env[key] = rawValue;
+      }
+      return;
+    }
+
+    if (lastKey && process.env[lastKey] && !trimmed.includes('=')) {
+      process.env[lastKey] += trimmed;
+    }
+  });
+}
+
+loadLocalEnv();
 
 const firebaseFallbackConfig = {
   apiKey: 'AIzaSyBKJXkyKBo2Oyo4LzfhcdFKAHneYlH9VoQ',

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Image, Linking, Modal, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../components/AppText';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { PressableScale } from '../components/PressableScale';
@@ -1151,11 +1152,20 @@ function PostComposerModal({
   onSaveMusic: () => void;
   onToolPress: (tool: 'emoji' | 'voice' | 'image' | 'options' | 'music' | 'hashtag') => void;
 }) {
+  const insets = useSafeAreaInsets();
   const canPublish = Boolean(postText.trim() || photoUrl.trim() || selectedEmoji || voiceUrl || musicUrl.trim()) && !isPosting;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={styles.postComposerScreen}>
+      <View
+        style={[
+          styles.postComposerScreen,
+          {
+            paddingTop: Math.max(insets.top, 8),
+            paddingBottom: Math.max(insets.bottom, 8)
+          }
+        ]}
+      >
         <View style={styles.postComposerTopBar}>
           <PressableScale
             accessibilityRole="button"
@@ -3592,8 +3602,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface
   },
   postComposerTopBar: {
-    minHeight: 70,
-    paddingTop: 20,
+    minHeight: 58,
+    paddingTop: 6,
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
@@ -3774,7 +3784,7 @@ const styles = StyleSheet.create({
   },
   postComposerFooter: {
     paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingBottom: 8,
     gap: 8,
     backgroundColor: colors.surface
   },
@@ -3811,10 +3821,10 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 15
+    gap: 6
   },
   composerToolButton: {
-    width: 30,
+    width: 32,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3827,7 +3837,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#8B6AF2'
   },
   hashToolButton: {
-    width: 30,
+    width: 32,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center'
@@ -3844,7 +3854,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     minHeight: 40,
-    paddingLeft: 4
+    paddingLeft: 2
   },
   publicToolText: {
     color: colors.ink,

@@ -20,6 +20,7 @@ import {
   spendDailyLike,
   spendSuperLike
 } from '../services/userFeatureService';
+import { registeredMemberErrorMessage } from '../services/registeredUserService';
 import {
   getAgoraSetupError,
   leaveLiveVideoMatch,
@@ -114,9 +115,9 @@ export function VideoNearbyScreen({
     try {
       const members = await appServices.nearby.list(profile);
       setNearbyMembers(members);
-    } catch {
+    } catch (error) {
       setNearbyMembers([]);
-      setMemberLoadNotice('Registered members could not load yet. Check your backend setup and connection.');
+      setMemberLoadNotice(registeredMemberErrorMessage(error));
     } finally {
       setIsLoadingMembers(false);
     }

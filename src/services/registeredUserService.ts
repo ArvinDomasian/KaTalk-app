@@ -387,6 +387,25 @@ export async function listRegisteredMemberCandidates(profile: UserProfile, maxCo
   return members.map((member) => candidateFromPublicProfile(member));
 }
 
+export function registeredMemberErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('permission') || normalized.includes('row-level security')) {
+    return 'Supabase blocked registered members. Run supabase/fix-visible-members-rls.sql in the Supabase SQL Editor.';
+  }
+
+  if (normalized.includes('does not exist') || normalized.includes('schema cache')) {
+    return 'Supabase member tables are missing. Run supabase/schema.sql, then run supabase/fix-visible-members-rls.sql.';
+  }
+
+  if (normalized.includes('network') || normalized.includes('fetch')) {
+    return 'Registered members could not load yet. Check your connection, then try again.';
+  }
+
+  return 'Registered members could not load yet. Check your Supabase setup and connection.';
+}
+
 export async function listRegisteredVoiceRooms(profile: UserProfile, maxCount = 20): Promise<VoiceRoom[]> {
   const members = await listRegisteredMemberCandidates(profile, maxCount);
 

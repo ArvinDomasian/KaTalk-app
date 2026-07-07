@@ -476,6 +476,57 @@ export async function sendLiveMessage(matchId: string, body: string) {
   });
 }
 
+export function subscribeSavedMatchMessages(
+  matchId: string,
+  onMessages: (messages: Message[]) => void,
+  onError: (message: string) => void
+) {
+  return subscribeLiveMessages(matchId, onMessages, onError);
+}
+
+export async function sendSavedMatchMessage(matchId: string, body: string) {
+  if (shouldUseSupabase()) {
+    const { sendSupabaseSavedMatchMessage } = await import('./supabaseMessageMatchService');
+    return sendSupabaseSavedMatchMessage(matchId, body);
+  }
+
+  const db = getLiveDb();
+  const currentUid = getCurrentFirebaseUserId();
+  const cleanBody = body.trim();
+
+  if (!cleanBody) {
+    return;
+  }
+
+  if (!db || !currentUid) {
+    throw new Error('Saved chat needs Firebase sign-in.');
+  }
+
+  const matchSnapshot = await getDoc(doc(db, LIVE_MATCH_COLLECTION, matchId));
+  const match = matchSnapshot.data();
+
+  if (!matchSnapshot.exists() || match?.status !== 'saved') {
+    throw new Error('This saved chat is not available yet.');
+  }
+
+  if (!Array.isArray(match.participantIds) || !match.participantIds.includes(currentUid)) {
+    throw new Error('This saved chat is not yours.');
+  }
+
+  const sentAtMs = Date.now();
+
+  await addDoc(collection(db, LIVE_MATCH_COLLECTION, matchId, 'messages'), {
+    senderId: currentUid,
+    body: cleanBody,
+    sentAtMs,
+    sentAt: serverTimestamp()
+  });
+  await updateDoc(doc(db, LIVE_MATCH_COLLECTION, matchId), {
+    lastMessageAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
 export async function saveLiveMessageMatch(matchId: string) {
   if (shouldUseSupabase()) {
     const { saveSupabaseLiveMessageMatch } = await import('./supabaseMessageMatchService');
@@ -565,7 +616,7 @@ export async function closeLiveMessageMatch(matchId: string, status: 'expired' |
   const db = getLiveDb();
 
   if (!db) {
-    return;
+    return status;
   }
 
   await runTransaction(db, async (transaction) => {
@@ -583,4 +634,6 @@ export async function closeLiveMessageMatch(matchId: string, status: 'expired' |
       updatedAt: serverTimestamp()
     });
   });
+
+  return status;
 }

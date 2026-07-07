@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { SafeAreaView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { RegistrationScreen } from './src/screens/RegistrationScreen';
 import { MessageMatchScreen } from './src/screens/MessageMatchScreen';
@@ -220,7 +221,8 @@ export default function App() {
   );
 
   return (
-    <SafeAreaView style={[styles.root, darkMode && styles.rootDark]}>
+    <SafeAreaProvider>
+      <SafeAreaView style={[styles.root, darkMode && styles.rootDark]}>
       <StatusBar style={darkMode ? 'light' : 'dark'} />
       <View style={[styles.shell, shouldShowTabs && styles.shellWithTabs]}>
         {activeScreen}
@@ -250,7 +252,8 @@ export default function App() {
           })}
         </View>
       ) : null}
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

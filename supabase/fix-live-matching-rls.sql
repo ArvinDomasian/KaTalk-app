@@ -134,7 +134,7 @@ create policy "Authenticated message participants send messages" on public.messa
   with check (
     exists (
       select 1 from public.message_matches
-      where id = match_id and auth.uid() = any(participant_ids) and status = 'active'
+      where id = match_id and auth.uid() = any(participant_ids) and status in ('active', 'saved')
     )
   );
 

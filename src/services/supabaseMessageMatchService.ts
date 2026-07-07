@@ -1,6 +1,6 @@
 import { openingMessages } from '../data/mockData';
 import type { Message, UserProfile } from '../types';
-import type { MessageMatchSession } from './contracts';
+import type { MessageMatchSession, SavedMatch } from './contracts';
 import { supabaseMissingConfigMessage } from './backendConfig';
 import {
   candidateFromPublicProfile,
@@ -50,6 +50,9 @@ type MatchRow = {
   reported_by?: string[] | null;
   blocked_by?: string[] | null;
   agora_channel_name?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  ended_at?: string | null;
 };
 
 function pickRandom<T>(items: T[]) {
@@ -253,9 +256,11 @@ export function startSupabaseMessageMatching(profile: UserProfile, callbacks: Li
     return () => undefined;
   }
 
+  const supabaseClient = supabase;
+
   function stopWatchingQueue() {
     if (channel) {
-      void supabase.removeChannel(channel);
+      void supabaseClient.removeChannel(channel);
       channel = null;
     }
 
@@ -291,7 +296,7 @@ export function startSupabaseMessageMatching(profile: UserProfile, callbacks: Li
 
     isWaiting = true;
     const now = Date.now();
-    const { error } = await supabase.from('message_match_queue').upsert({
+    const { error } = await supabaseClient.from('message_match_queue').upsert({
       user_id: currentUid,
       public_profile: publicProfile,
       status: 'waiting',
@@ -329,7 +334,7 @@ export function startSupabaseMessageMatching(profile: UserProfile, callbacks: Li
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await supabaseClient
         .from('message_match_queue')
         .select('*')
         .eq('user_id', currentUid)
@@ -351,7 +356,7 @@ export function startSupabaseMessageMatching(profile: UserProfile, callbacks: Li
       void pollOwnQueue();
     }, QUEUE_POLL_MS);
 
-    channel = supabase
+    channel = supabaseClient
       .channel(`message-queue-${currentUid}`)
       .on(
         'postgres_changes',
@@ -375,7 +380,7 @@ export function startSupabaseMessageMatching(profile: UserProfile, callbacks: Li
 
     void getCurrentSupabaseUser().then((user) => {
       if (user && isWaiting && !matchHandled) {
-        void supabase
+        void supabaseClient
           .from('message_match_queue')
           .update({
             status: 'cancelled',
@@ -394,6 +399,7 @@ export function subscribeSupabaseMessages(
 ) {
   const supabase = getSupabaseClient();
   let currentUid = '';
+  let lastErrorMessage = '';
 
   if (!supabase) {
     onError(supabaseMissingConfigMessage());
@@ -412,10 +418,16 @@ export function subscribeSupabaseMessages(
       .order('sent_at_ms', { ascending: true });
 
     if (error) {
-      onError(messageMatchErrorMessage(error));
+      const nextError = messageMatchErrorMessage(error);
+
+      if (nextError !== lastErrorMessage) {
+        lastErrorMessage = nextError;
+        onError(nextError);
+      }
       return;
     }
 
+    lastErrorMessage = '';
     onMessages(
       ((data ?? []) as Array<{ id: string; sender_id?: string; body?: string; sent_at_ms?: number }>).map((item) => {
         const senderId = String(item.sender_id ?? 'system');
@@ -431,6 +443,9 @@ export function subscribeSupabaseMessages(
   }
 
   void loadMessages();
+  const pollTimer = setInterval(() => {
+    void loadMessages();
+  }, LIVE_CHAT_POLL_MS);
 
   const channel = supabaseClient
     .channel(`message-list-${matchId}`)
@@ -440,6 +455,7 @@ export function subscribeSupabaseMessages(
     .subscribe();
 
   return () => {
+    clearInterval(pollTimer);
     void supabaseClient.removeChannel(channel);
   };
 }
@@ -451,6 +467,7 @@ export function subscribeSupabaseMatchState(
 ) {
   const supabase = getSupabaseClient();
   let currentUid = '';
+  let lastErrorMessage = '';
 
   if (!supabase) {
     onError(supabaseMissingConfigMessage());
@@ -469,10 +486,16 @@ export function subscribeSupabaseMatchState(
       .single();
 
     if (error || !data) {
-      onError(messageMatchErrorMessage(error));
+      const nextError = messageMatchErrorMessage(error);
+
+      if (nextError !== lastErrorMessage) {
+        lastErrorMessage = nextError;
+        onError(nextError);
+      }
       return;
     }
 
+    lastErrorMessage = '';
     const match = data as MatchRow;
     const savedBy = Array.isArray(match.saved_by) ? match.saved_by : [];
 
@@ -485,6 +508,9 @@ export function subscribeSupabaseMatchState(
   }
 
   void loadState();
+  const pollTimer = setInterval(() => {
+    void loadState();
+  }, LIVE_CHAT_POLL_MS);
 
   const channel = supabaseClient
     .channel(`message-match-${matchId}`)
@@ -494,6 +520,7 @@ export function subscribeSupabaseMatchState(
     .subscribe();
 
   return () => {
+    clearInterval(pollTimer);
     void supabaseClient.removeChannel(channel);
   };
 }
@@ -537,6 +564,89 @@ export async function sendSupabaseLiveMessage(matchId: string, body: string) {
     .from('message_matches')
     .update({ updated_at: new Date().toISOString() })
     .eq('id', matchId);
+}
+
+export async function sendSupabaseSavedMatchMessage(matchId: string, body: string) {
+  const supabase = getSupabaseClient();
+  const user = await getCurrentSupabaseUser();
+  const cleanBody = body.trim();
+
+  if (!cleanBody) {
+    return;
+  }
+
+  if (!supabase || !user) {
+    throw new Error('Saved chat needs Supabase sign-in.');
+  }
+
+  const { data: match, error: matchError } = await supabase
+    .from('message_matches')
+    .select('status')
+    .eq('id', matchId)
+    .single();
+
+  if (matchError || !match || match.status !== 'saved') {
+    throw new Error('This saved chat is not available yet.');
+  }
+
+  const sentAtMs = Date.now();
+  const { error } = await supabase.from('messages').insert({
+    match_id: matchId,
+    sender_id: user.id,
+    body: cleanBody,
+    sent_at_ms: sentAtMs,
+    sent_at: new Date(sentAtMs).toISOString()
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Saved chat could not send this message yet.');
+  }
+
+  await supabase
+    .from('message_matches')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', matchId);
+}
+
+export async function listSupabaseSavedMessageMatches(): Promise<SavedMatch[]> {
+  const supabase = getSupabaseClient();
+  const user = await getCurrentSupabaseUser();
+
+  if (!supabase || !user) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('message_matches')
+    .select('*')
+    .eq('status', 'saved')
+    .contains('participant_ids', [user.id])
+    .order('updated_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    throw new Error(messageMatchErrorMessage(error));
+  }
+
+  return ((data ?? []) as MatchRow[])
+    .map((match): SavedMatch | null => {
+      const participantIds = Array.isArray(match.participant_ids) ? match.participant_ids.map(String) : [];
+      const otherUid = participantIds.find((id) => id !== user.id);
+      const otherProfile = otherUid ? publicProfileFromUnknown(match.participants?.[otherUid]) : null;
+
+      if (!otherUid || !otherProfile) {
+        return null;
+      }
+
+      return {
+        id: match.id,
+        userId: user.id,
+        candidate: candidateFromPublicProfile(otherProfile),
+        createdAt: new Date(match.ended_at ?? match.updated_at ?? match.created_at ?? Date.now()),
+        revealState: 'anonymous' as const
+      };
+    })
+    .filter((match): match is SavedMatch => match !== null);
 }
 
 export async function saveSupabaseLiveMessageMatch(matchId: string) {
@@ -614,16 +724,28 @@ export async function closeSupabaseLiveMessageMatch(matchId: string, status: 'ex
   const supabase = getSupabaseClient();
 
   if (!supabase) {
-    return;
+    return status;
   }
+
+  const { data } = await supabase
+    .from('message_matches')
+    .select('participant_ids, saved_by')
+    .eq('id', matchId)
+    .single();
+  const participantIds = Array.isArray(data?.participant_ids) ? data.participant_ids.map(String) : [];
+  const savedBy = Array.isArray(data?.saved_by) ? data.saved_by.map(String) : [];
+  const bothSaved = participantIds.length >= 2 && participantIds.every((id) => savedBy.includes(id));
+  const finalStatus = bothSaved ? 'saved' : status;
 
   await supabase
     .from('message_matches')
     .update({
-      status,
+      status: finalStatus,
       ended_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
     .eq('id', matchId)
     .eq('status', 'active');
+
+  return finalStatus;
 }
