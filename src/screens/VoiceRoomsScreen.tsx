@@ -261,20 +261,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background
   },
   rootDark: {
-    backgroundColor: '#101217'
+    backgroundColor: colors.background
   },
   textOnDark: {
     color: colors.onAccent
   },
   mutedOnDark: {
-    color: '#BBC1CC'
+    color: colors.muted
   },
   cardDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderColor: '#332241',
+    backgroundColor: colors.surface
   },
   softSurfaceDark: {
-    backgroundColor: '#222735'
+    backgroundColor: colors.surfaceMuted
   },
   content: {
     padding: 16,
@@ -287,7 +287,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'space-between',
     padding: 18,
-    backgroundColor: colors.cardDark
+    borderWidth: 1,
+    borderColor: '#3B1742',
+    backgroundColor: '#100B18'
   },
   heroTop: {
     flexDirection: 'row',
@@ -300,7 +302,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.34)'
+    backgroundColor: 'rgba(242,56,166,0.16)'
   },
   locationPill: {
     flexDirection: 'row',
@@ -309,7 +311,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     minHeight: 38,
     borderRadius: 19,
-    backgroundColor: colors.surface
+    backgroundColor: colors.onAccent
   },
   locationText: {
     fontWeight: '800',
@@ -354,7 +356,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 14,
     backgroundColor: colors.surface,
-    borderRadius: 8
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 18
   },
   noticeText: {
     flex: 1,
@@ -363,7 +367,7 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     minHeight: 118,
-    borderRadius: 8,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
     padding: 16,
@@ -386,7 +390,7 @@ const styles = StyleSheet.create({
   },
   roomCard: {
     backgroundColor: colors.surface,
-    borderRadius: 8,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.line,
     padding: 16,
@@ -400,10 +404,11 @@ const styles = StyleSheet.create({
   moodPill: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: colors.sky
+    borderRadius: 14,
+    backgroundColor: colors.accentSoft
   },
   moodText: {
+    color: colors.accent,
     fontWeight: '900',
     fontSize: 12
   },
@@ -456,7 +461,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 16,
     backgroundColor: colors.surfaceMuted
   },
   liveDot: {
@@ -479,14 +484,14 @@ const styles = StyleSheet.create({
   iconButton: {
     width: 48,
     height: 48,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.dangerSoft
   },
   policyCard: {
     backgroundColor: colors.surface,
-    borderRadius: 8,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: colors.line,
     padding: 16,

@@ -1419,10 +1419,10 @@ function SavedMatchChatModal({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.surface
+    backgroundColor: colors.background
   },
   rootDark: {
-    backgroundColor: '#101217'
+    backgroundColor: colors.background
   },
   textOnDark: {
     color: colors.onAccent
@@ -1431,12 +1431,12 @@ const styles = StyleSheet.create({
     color: '#BBC1CC'
   },
   cardDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderColor: '#332241',
+    backgroundColor: colors.surface
   },
   softSurfaceDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#222735'
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted
   },
   matchWindowOverlay: {
     flex: 1,
@@ -1502,7 +1502,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 26,
-    gap: 16
+    gap: 17,
+    backgroundColor: colors.background
   },
   topBar: {
     flexDirection: 'row',
@@ -1510,8 +1511,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   screenTitle: {
-    fontSize: 25,
-    lineHeight: 30,
+    color: colors.ink,
+    fontSize: 31,
+    lineHeight: 36,
     fontWeight: '900'
   },
   screenSubtitle: {
@@ -1566,7 +1568,8 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   sectionTitleSmall: {
-    fontSize: 16,
+    color: colors.ink,
+    fontSize: 17,
     fontWeight: '900'
   },
   storyRow: {
@@ -1586,11 +1589,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: colors.line,
+    borderColor: colors.accent,
     backgroundColor: colors.surfaceMuted
   },
   addStoryText: {
-    color: colors.ink,
+    color: colors.accent,
     fontSize: 30,
     lineHeight: 34,
     fontWeight: '500'
@@ -1603,7 +1606,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accent
   },
   myStoryImage: {
-    borderColor: '#8B6AF2'
+    borderColor: colors.lavender
   },
   storyImageFallback: {
     width: 56,
@@ -1627,15 +1630,17 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   featureMatch: {
-    borderRadius: 18,
-    backgroundColor: colors.surfaceMuted,
-    padding: 14,
+    borderRadius: 20,
+    backgroundColor: '#181021',
+    padding: 16,
     gap: 12,
     borderWidth: 1,
-    borderColor: colors.line
+    borderColor: '#3B1742'
   },
   featureTitle: {
-    fontSize: 18,
+    color: colors.ink,
+    fontSize: 23,
+    lineHeight: 28,
     fontWeight: '900'
   },
   featureCopy: {
@@ -1650,7 +1655,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#EAF8F0'
+    backgroundColor: '#13291F'
   },
   homeNoticeText: {
     flex: 1,
@@ -1667,13 +1672,13 @@ const styles = StyleSheet.create({
   },
   matchStatusRow: {
     minHeight: 44,
-    borderRadius: 8,
+    borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 9,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.line
   },
@@ -1693,7 +1698,7 @@ const styles = StyleSheet.create({
   },
   emptyState: {
     minHeight: 96,
-    borderRadius: 8,
+    borderRadius: 16,
     padding: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1721,7 +1726,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line
   },
   chatRowDark: {
-    borderBottomColor: '#2A2E38'
+    borderBottomColor: colors.line
   },
   chatAvatar: {
     width: 50,
@@ -1772,8 +1777,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line
   },
   matchHeaderDark: {
-    borderBottomColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderBottomColor: colors.line,
+    backgroundColor: colors.surface
   },
   avatarImage: {
     width: 46,
@@ -1825,8 +1830,8 @@ const styles = StyleSheet.create({
     borderColor: colors.line
   },
   bubbleDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderColor: colors.line,
+    backgroundColor: colors.surface
   },
   myBubble: {
     alignSelf: 'flex-end',
@@ -1860,8 +1865,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface
   },
   actionPanelDark: {
-    borderTopColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderTopColor: colors.line,
+    backgroundColor: colors.surface
   },
   quickActions: {
     flexDirection: 'row',
@@ -1897,7 +1902,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   inputRowDark: {
-    backgroundColor: '#171A22'
+    backgroundColor: colors.surface
   },
   input: {
     flex: 1,
@@ -1912,8 +1917,8 @@ const styles = StyleSheet.create({
     color: colors.ink
   },
   inputDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#222735',
+    borderColor: colors.line,
+    backgroundColor: colors.surfaceMuted,
     color: colors.onAccent
   },
   sendButton: {

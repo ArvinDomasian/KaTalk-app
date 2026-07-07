@@ -108,7 +108,7 @@ const storeProductIdeas = [
   { title: 'Fast Verification', price: 'PHP 149', detail: 'Paid review queue for faster profile verification.' }
 ];
 const monetizationRoadmap = [
-  'MVP first: profile, match, chat, safety, verification.',
+  'Core access: profile, match, chat, safety, verification.',
   'Then subscriptions: Premium, Premium Plus, VIP.',
   'Then consumables: boosts, super likes, coins, gifts.',
   'Later: rewarded ads and AI profile help.'
@@ -815,7 +815,7 @@ export function ProfileScreen({
             <AppText style={[styles.subscriptionBannerMeta, darkMode && styles.mutedOnDark]}>
               {subscription?.isPremium || profile.subscription?.isActive
                 ? 'Your premium access is connected to this account.'
-                : 'Premium, Premium Plus, VIP, and restore support.'}
+                : 'Unlimited likes, advanced filters, read receipts, and more.'}
             </AppText>
           </View>
           <AppText style={[styles.chevronText, darkMode && styles.textOnDark]}>{'>'}</AppText>
@@ -824,9 +824,9 @@ export function ProfileScreen({
         <View style={[styles.roadmapCard, darkMode && styles.cardDark]}>
           <View style={styles.roadmapTop}>
             <View>
-              <AppText style={[styles.roadmapTitle, darkMode && styles.textOnDark]}>MVP tools</AppText>
+              <AppText style={[styles.roadmapTitle, darkMode && styles.textOnDark]}>Rewards wallet</AppText>
               <AppText style={[styles.roadmapMeta, darkMode && styles.mutedOnDark]}>
-                Likes, wallet, verification, rewards, and AI readiness.
+                Your likes, coins, boosts, verification, and reward perks.
               </AppText>
             </View>
             <View style={[styles.verificationBadge, verification.status === 'verified' && styles.verificationBadgeVerified]}>
@@ -1717,7 +1717,7 @@ function SubscriptionPanel({
       <View style={styles.settingsSection}>
         <AppText style={[styles.settingsSectionLabel, darkMode && styles.drawerMutedText]}>Free account</AppText>
         <View style={[styles.planCard, darkMode && styles.drawerRowDark]}>
-          <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>MVP access</AppText>
+          <AppText style={[styles.planTitle, darkMode && styles.textOnDark]}>Core access</AppText>
           <View style={styles.plusFeatureList}>
             {freeUserBenefits.map((item) => (
               <PlusFeature key={item} darkMode={darkMode} text={item} />
@@ -2436,24 +2436,24 @@ function PostCard({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
     position: 'relative'
   },
   rootDark: {
-    backgroundColor: '#121418'
+    backgroundColor: colors.background
   },
   textOnDark: {
     color: colors.onAccent
   },
   mutedOnDark: {
-    color: '#BBC1CC'
+    color: colors.muted
   },
   cardDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderColor: '#332241',
+    backgroundColor: colors.surface
   },
   softSurfaceDark: {
-    backgroundColor: '#222735'
+    backgroundColor: colors.surfaceMuted
   },
   content: {
     padding: 16,
@@ -2466,8 +2466,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   screenTitle: {
-    fontSize: 25,
-    lineHeight: 30,
+    color: colors.ink,
+    fontSize: 31,
+    lineHeight: 36,
     fontWeight: '900'
   },
   profileIconBadge: {
@@ -2479,7 +2480,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted
   },
   profileIconBadgeDark: {
-    backgroundColor: '#222735'
+    backgroundColor: colors.surfaceMuted
   },
   profileIconText: {
     color: colors.ink,
@@ -3049,7 +3050,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     padding: 14,
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.surface
@@ -3145,8 +3146,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: '#BFE8D0',
-    backgroundColor: '#EAF8F0'
+    borderColor: '#284F3B',
+    backgroundColor: '#13291F'
   },
   adminBannerDark: {
     borderColor: '#285B43',
@@ -3178,18 +3179,18 @@ const styles = StyleSheet.create({
   },
   subscriptionBanner: {
     minHeight: 72,
-    borderRadius: 18,
+    borderRadius: 22,
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: '#D8CEF9',
-    backgroundColor: '#F5F1FF'
+    borderColor: '#3B1742',
+    backgroundColor: '#181021'
   },
   subscriptionBannerDark: {
-    borderColor: '#3D315F',
-    backgroundColor: '#201C2E'
+    borderColor: '#3B1742',
+    backgroundColor: '#181021'
   },
   subscriptionIconBubble: {
     width: 54,
@@ -3197,7 +3198,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#8B6AF2'
+    backgroundColor: colors.lavender
   },
   subscriptionIconText: {
     color: colors.onAccent,
@@ -3229,9 +3230,9 @@ const styles = StyleSheet.create({
   },
   roadmapCard: {
     gap: 12,
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: '#332241',
     padding: 14,
     backgroundColor: colors.surface
   },

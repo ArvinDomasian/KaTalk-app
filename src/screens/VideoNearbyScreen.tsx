@@ -391,7 +391,7 @@ export function VideoNearbyScreen({
     <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
-          <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>Nearby you</AppText>
+          <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>Discover</AppText>
           <Ionicons name="ellipsis-horizontal" size={24} color={colors.muted} />
         </View>
 
@@ -617,10 +617,10 @@ function MemberPhotoOverlay({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.surface
+    backgroundColor: colors.background
   },
   rootDark: {
-    backgroundColor: '#101217'
+    backgroundColor: colors.background
   },
   textOnDark: {
     color: colors.onAccent
@@ -629,16 +629,17 @@ const styles = StyleSheet.create({
     color: '#BBC1CC'
   },
   cardDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#171A22'
+    borderColor: '#332241',
+    backgroundColor: colors.surface
   },
   softSurfaceDark: {
-    backgroundColor: '#222735'
+    backgroundColor: colors.surfaceMuted
   },
   content: {
     padding: 16,
     gap: 14,
-    paddingBottom: 28
+    paddingBottom: 28,
+    backgroundColor: colors.background
   },
   topBar: {
     flexDirection: 'row',
@@ -646,17 +647,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   screenTitle: {
-    fontSize: 25,
-    lineHeight: 30,
+    color: colors.ink,
+    fontSize: 31,
+    lineHeight: 36,
     fontWeight: '900'
   },
   videoPanel: {
-    padding: 14,
+    padding: 16,
     gap: 14,
-    borderRadius: 8,
+    borderRadius: 20,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.line
+    borderColor: '#3B1742'
   },
   videoIntro: {
     flexDirection: 'row',
@@ -666,7 +668,7 @@ const styles = StyleSheet.create({
   videoIcon: {
     width: 46,
     height: 46,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent
@@ -676,7 +678,9 @@ const styles = StyleSheet.create({
     gap: 4
   },
   videoTitle: {
-    fontSize: 18,
+    color: colors.ink,
+    fontSize: 20,
+    lineHeight: 25,
     fontWeight: '900'
   },
   videoCopy: {
@@ -694,7 +698,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    borderRadius: 8,
+    borderRadius: 16,
     backgroundColor: colors.accentSoft
   },
   safetyLabel: {
@@ -721,7 +725,7 @@ const styles = StyleSheet.create({
   },
   discoveryStatus: {
     minHeight: 70,
-    borderRadius: 8,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
     padding: 12,
@@ -777,7 +781,7 @@ const styles = StyleSheet.create({
   fullWidthEmpty: {
     width: '100%',
     minHeight: 122,
-    borderRadius: 8,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
     padding: 16,
@@ -800,7 +804,7 @@ const styles = StyleSheet.create({
   },
   memberTile: {
     width: '48%',
-    borderRadius: 8,
+    borderRadius: 18,
     backgroundColor: colors.surface,
     overflow: 'hidden',
     borderWidth: 1,
@@ -817,14 +821,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#DDEBFA'
   },
   memberImage: {
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18
   },
   distanceBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     minHeight: 26,
-    borderRadius: 8,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface
@@ -880,7 +884,7 @@ const styles = StyleSheet.create({
   profileButton: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
@@ -894,7 +898,7 @@ const styles = StyleSheet.create({
   discoveryActionButton: {
     flex: 1,
     minHeight: 34,
-    borderRadius: 8,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -927,7 +931,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface
+    backgroundColor: colors.background
   },
   searchPulseOuter: {
     width: 174,
@@ -935,7 +939,7 @@ const styles = StyleSheet.create({
     borderRadius: 87,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#E8F3FF'
+    backgroundColor: '#2A1533'
   },
   searchPulseMiddle: {
     width: 132,
@@ -943,7 +947,7 @@ const styles = StyleSheet.create({
     borderRadius: 66,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#B9DBFF'
+    backgroundColor: '#3B1742'
   },
   searchPulseInner: {
     width: 88,

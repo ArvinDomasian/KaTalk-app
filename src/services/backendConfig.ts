@@ -9,19 +9,42 @@ function cleanEnvValue(value?: string) {
 }
 
 function getExtraValue(key: 'supabaseUrl' | 'supabaseAnonKey') {
-  const extra = Constants.expoConfig?.extra ?? Constants.manifest2?.extra ?? {};
-  const backend = extra as {
-    supabase?: {
-      url?: string;
-      anonKey?: string;
+  const constants = Constants as unknown as {
+    expoConfig?: { extra?: unknown };
+    manifest?: { extra?: unknown };
+    manifest2?: {
+      extra?: unknown;
     };
   };
+  const extras = [
+    constants.expoConfig?.extra,
+    constants.manifest?.extra,
+    constants.manifest2?.extra,
+    (constants.manifest2?.extra as { expoClient?: { extra?: unknown } } | undefined)?.expoClient?.extra
+  ];
+
+  const values = extras
+    .map((extra) => {
+      const backend = extra as
+        | {
+            supabase?: {
+              url?: string;
+              anonKey?: string;
+            };
+          }
+        | undefined;
+
+      return key === 'supabaseUrl'
+        ? cleanEnvValue(backend?.supabase?.url)
+        : cleanEnvValue(backend?.supabase?.anonKey);
+    })
+    .filter(Boolean);
 
   if (key === 'supabaseUrl') {
-    return cleanEnvValue(backend.supabase?.url);
+    return values[0] ?? '';
   }
 
-  return cleanEnvValue(backend.supabase?.anonKey);
+  return values[0] ?? '';
 }
 
 export function getBackendProvider() {
@@ -52,5 +75,5 @@ export function isSupabaseConfigured() {
 }
 
 export function supabaseMissingConfigMessage() {
-  return 'KaTalk is not connected to Supabase yet. In Supabase Project Settings > API, copy the Project URL and anon public key into .env, then fully restart Expo. The URL should look like https://your-project.supabase.co and the anon key should start with eyJ.';
+  return 'KaTalk cannot read the Supabase build config yet. Install the newest APK build after the Supabase URL and anon public key are saved in Expo EAS.';
 }

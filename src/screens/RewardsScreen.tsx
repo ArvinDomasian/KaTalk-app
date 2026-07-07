@@ -259,7 +259,7 @@ export function RewardsScreen({
           </View>
           <View style={styles.achievementRow}>
             <Achievement icon="flame" label="Streak" active={economy.dailyRewardStreak > 0} />
-            <Achievement icon="chatbox-heart" label="Opener" active={economy.conversationsStarted >= 1} />
+            <Achievement icon="chatbox-ellipses" label="Opener" active={economy.conversationsStarted >= 1} />
             <Achievement icon="star" label="Explorer" active={economy.missionLikes >= 5} />
           </View>
         </View>

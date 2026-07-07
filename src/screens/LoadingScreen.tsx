@@ -72,10 +72,13 @@ const styles = StyleSheet.create({
     borderRadius: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: '#3B1742',
+    backgroundColor: '#181021',
     marginBottom: 18
   },
   title: {
+    color: colors.ink,
     fontSize: 28,
     lineHeight: 34,
     fontWeight: '900',
@@ -98,7 +101,7 @@ const styles = StyleSheet.create({
   },
   step: {
     minHeight: 44,
-    borderRadius: 8,
+    borderRadius: 16,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
