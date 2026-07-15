@@ -41,7 +41,18 @@ type Props = {
 };
 
 type VideoState = 'idle' | 'searching' | 'matched' | 'calling';
-type MemberDecision = 'liked' | 'passed' | 'super_liked';
+type DiscoverFeed = 'forYou' | 'following' | 'new';
+type MemberDecision = 'liked' | 'passed' | 'super_liked' | 'followed';
+
+function friendlyDiscoverNotice(message: string) {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('permission denied') || lowerMessage.includes('row level security')) {
+    return 'Discover is still syncing real profiles. Members will appear here after app database access is ready.';
+  }
+
+  return message;
+}
 
 export function VideoNearbyScreen({
   profile,
@@ -57,6 +68,7 @@ export function VideoNearbyScreen({
   const [memberLoadNotice, setMemberLoadNotice] = useState<string | null>(null);
   const [memberDecisions, setMemberDecisions] = useState<Record<string, MemberDecision>>({});
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [discoverFeed, setDiscoverFeed] = useState<DiscoverFeed>('forYou');
   const cancelSearchRef = useRef<(() => void) | null>(null);
   const matchedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFinishingRef = useRef(false);
@@ -278,6 +290,20 @@ export function VideoNearbyScreen({
     }
   }
 
+  const availableMembers = nearbyMembers.filter((member) => memberDecisions[member.id] !== 'passed');
+  const followingMembers = nearbyMembers.filter((member) => {
+    const decision = memberDecisions[member.id];
+    return decision === 'liked' || decision === 'super_liked' || decision === 'followed';
+  });
+  const newMembers = [...availableMembers].reverse();
+  const discoverMembers =
+    discoverFeed === 'following'
+      ? followingMembers
+      : discoverFeed === 'new'
+        ? newMembers
+        : availableMembers;
+  const featuredMember = !isLoadingMembers && !memberLoadNotice ? discoverMembers[0] ?? null : null;
+
   function applyProfileAction(result: ReturnType<typeof spendDailyLike>) {
     onProfileUpdate?.(result.profile);
     setActionNotice(result.message);
@@ -300,6 +326,20 @@ export function VideoNearbyScreen({
   function passMember(member: Candidate) {
     setMemberDecisions((current) => ({ ...current, [member.id]: 'passed' }));
     setActionNotice(`${member.nickname} marked as passed.`);
+  }
+
+  function followMember(member: Candidate) {
+    const decision = memberDecisions[member.id];
+
+    if (decision === 'followed' || decision === 'liked' || decision === 'super_liked') {
+      setActionNotice(`${member.nickname} is already in Following.`);
+      setDiscoverFeed('following');
+      return;
+    }
+
+    setMemberDecisions((current) => ({ ...current, [member.id]: 'followed' }));
+    setDiscoverFeed('following');
+    setActionNotice(`${member.nickname} added to Following.`);
   }
 
   function superLikeMember(member: Candidate) {
@@ -389,60 +429,31 @@ export function VideoNearbyScreen({
 
   return (
     <View style={[styles.root, darkMode && styles.rootDark]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.topBar}>
           <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>Discover</AppText>
-          <Ionicons name="ellipsis-horizontal" size={24} color={colors.muted} />
+          <View style={styles.coinPill}>
+            <Ionicons name="ellipse" size={13} color={colors.gold} />
+            <AppText style={styles.coinPillText}>{economy.coins.toLocaleString()}</AppText>
+          </View>
         </View>
 
-        <View style={[styles.videoPanel, darkMode && styles.cardDark]}>
-          <View style={styles.videoIntro}>
-            <View style={styles.videoIcon}>
-              <Ionicons name="videocam" size={24} color={colors.onAccent} />
-            </View>
-            <View style={styles.videoText}>
-              <AppText style={[styles.videoTitle, darkMode && styles.textOnDark]}>
-                One-to-one video match
-              </AppText>
-              <AppText style={[styles.videoCopy, darkMode && styles.mutedOnDark]}>
-                Match with a real verified member. Camera starts off and you control when to reveal.
-              </AppText>
-            </View>
-          </View>
-          <View style={styles.safetyRow}>
-            <SafetyItem icon="videocam-off-outline" label="Camera off first" />
-            <SafetyItem icon="shield-checkmark-outline" label="Report or block" />
-            <SafetyItem icon="exit-outline" label="Leave anytime" />
-          </View>
-          <PrimaryButton label="Find Video Match" icon="videocam-outline" onPress={startVideo} />
-          {Platform.OS === 'web' ? (
-            <AppText style={styles.mobileOnlyText}>
-              Live video is available in the installed Android and iOS app.
-            </AppText>
-          ) : null}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>Registered members</AppText>
-          <AppText style={[styles.sectionCopy, darkMode && styles.mutedOnDark]}>
-            Profiles only. This tab has no chat requests.
-          </AppText>
-        </View>
-
-        <View style={[styles.discoveryStatus, darkMode && styles.cardDark]}>
-          <View>
-            <AppText style={[styles.discoveryStatusTitle, darkMode && styles.textOnDark]}>
-              Discovery actions
-            </AppText>
-            <AppText style={[styles.discoveryStatusCopy, darkMode && styles.mutedOnDark]}>
-              {profile.subscription?.isActive
-                ? 'Membership active: likes are unlimited.'
-                : `${economy.dailyLikesRemaining} free likes left today.`}
-            </AppText>
-          </View>
-          <View style={styles.superLikePill}>
-            <AppText style={styles.superLikePillText}>{economy.superLikes} Super Likes</AppText>
-          </View>
+        <View style={styles.discoverTabs}>
+          <DiscoverTabButton
+            label="For You"
+            active={discoverFeed === 'forYou'}
+            onPress={() => setDiscoverFeed('forYou')}
+          />
+          <DiscoverTabButton
+            label="Following"
+            active={discoverFeed === 'following'}
+            onPress={() => setDiscoverFeed('following')}
+          />
+          <DiscoverTabButton
+            label="New"
+            active={discoverFeed === 'new'}
+            onPress={() => setDiscoverFeed('new')}
+          />
         </View>
 
         {actionNotice ? (
@@ -451,111 +462,165 @@ export function VideoNearbyScreen({
           </View>
         ) : null}
 
-        <View style={styles.memberGrid}>
-          {isLoadingMembers ? (
-            <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
-                Loading real registered members...
-              </AppText>
-            </View>
-          ) : null}
-          {!isLoadingMembers && memberLoadNotice ? (
-            <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
-              <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
-                {memberLoadNotice}
-              </AppText>
-            </View>
-          ) : null}
-          {!isLoadingMembers && !memberLoadNotice && nearbyMembers.length === 0 ? (
-            <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
-              <AppText style={[styles.emptyTitle, darkMode && styles.textOnDark]}>
-                No registered members yet
-              </AppText>
-              <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
-                Real profiles will appear here after other users register and complete their profile.
-              </AppText>
-            </View>
-          ) : null}
-          {nearbyMembers.map((member) => (
-            <View key={member.id} style={[styles.memberTile, darkMode && styles.cardDark]}>
-              {member.photoUrl ? (
-                <ImageBackground
-                  source={{ uri: member.photoUrl }}
-                  imageStyle={styles.memberImage}
-                  style={styles.memberPhoto}
-                >
-                  <MemberPhotoOverlay member={member} onReport={() => handleNearbySafety('report', member)} onBlock={() => handleNearbySafety('block', member)} />
-                </ImageBackground>
-              ) : (
-                <View style={[styles.memberPhoto, styles.memberPhotoFallback]}>
-                  <MemberPhotoOverlay member={member} onReport={() => handleNearbySafety('report', member)} onBlock={() => handleNearbySafety('block', member)} />
-                  <MemberAvatar
-                    name={member.nickname}
-                    color={member.avatarColor}
-                    size={78}
-                    borderColor="rgba(255,255,255,0.72)"
-                  />
-                </View>
-              )}
-              <View style={styles.memberCaption}>
-                <AppText style={[styles.memberName, darkMode && styles.textOnDark]}>
-                  {member.nickname}, {member.age}
-                </AppText>
-                {memberDecisions[member.id] ? (
-                  <View style={styles.decisionBadge}>
-                    <AppText style={styles.decisionBadgeText}>
-                      {memberDecisions[member.id] === 'super_liked'
-                        ? 'Super'
-                        : memberDecisions[member.id] === 'liked'
-                          ? 'Liked'
-                          : 'Passed'}
-                    </AppText>
-                  </View>
-                ) : null}
-                <PressableScale
-                  accessibilityRole="button"
-                  accessibilityLabel={`View ${member.nickname}'s profile`}
-                  onPress={() => Alert.alert(member.nickname, member.prompt)}
-                  style={[styles.profileButton, darkMode && styles.softSurfaceDark]}
-                >
-                  <Ionicons
-                    name="person-outline"
-                    size={16}
-                    color={darkMode ? colors.onAccent : colors.ink}
-                  />
-                </PressableScale>
-              </View>
-              <View style={styles.discoveryActions}>
-                <PressableScale
-                  accessibilityRole="button"
-                  accessibilityLabel={`Pass ${member.nickname}`}
-                  onPress={() => passMember(member)}
-                  style={[styles.discoveryActionButton, styles.passButton]}
-                >
-                  <AppText style={styles.passButtonText}>Pass</AppText>
-                </PressableScale>
-                <PressableScale
-                  accessibilityRole="button"
-                  accessibilityLabel={`Like ${member.nickname}`}
-                  onPress={() => likeMember(member)}
-                  style={[styles.discoveryActionButton, styles.likeButton]}
-                >
-                  <AppText style={styles.likeButtonText}>Like</AppText>
-                </PressableScale>
-                <PressableScale
-                  accessibilityRole="button"
-                  accessibilityLabel={`Super Like ${member.nickname}`}
-                  onPress={() => superLikeMember(member)}
-                  style={[styles.discoveryActionButton, styles.superButton]}
-                >
-                  <AppText style={styles.superButtonText}>Super</AppText>
-                </PressableScale>
-              </View>
+        {featuredMember ? (
+          <FeaturedMemberCard
+            member={featuredMember}
+            decision={memberDecisions[featuredMember.id]}
+            feed={discoverFeed}
+            onPass={() => passMember(featuredMember)}
+            onLike={() => likeMember(featuredMember)}
+            onFollow={() => followMember(featuredMember)}
+            onMessage={startVideo}
+            onShare={() => Alert.alert('Share profile', `${featuredMember.nickname}'s profile is ready to share inside KaTalk.`)}
+          />
+        ) : null}
+
+        {isLoadingMembers ? (
+          <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
+            <ActivityIndicator size="small" color={colors.accent} />
+            <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
+              Loading real registered members...
+            </AppText>
+          </View>
+        ) : null}
+        {!isLoadingMembers && memberLoadNotice ? (
+          <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
+            <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
+              {friendlyDiscoverNotice(memberLoadNotice)}
+            </AppText>
+          </View>
+        ) : null}
+        {!isLoadingMembers && !memberLoadNotice && !featuredMember ? (
+          <View style={[styles.fullWidthEmpty, darkMode && styles.cardDark]}>
+            <AppText style={[styles.emptyTitle, darkMode && styles.textOnDark]}>
+              {discoverFeed === 'following' ? 'No followed profiles yet' : 'No people in Discover yet'}
+            </AppText>
+            <AppText style={[styles.emptyText, darkMode && styles.mutedOnDark]}>
+              {discoverFeed === 'following'
+                ? 'Tap the bookmark button on a profile to add them here.'
+                : 'Real registered profiles will appear here as soon as members complete their profiles.'}
+            </AppText>
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+function DiscoverTabButton({
+  label,
+  active,
+  onPress
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.discoverTab, active && styles.discoverTabActive]}
+    >
+      <AppText style={active ? styles.discoverTabActiveText : styles.discoverTabText}>
+        {label}
+      </AppText>
+    </PressableScale>
+  );
+}
+
+function FeaturedMemberCard({
+  member,
+  decision,
+  feed,
+  onPass,
+  onLike,
+  onFollow,
+  onMessage,
+  onShare
+}: {
+  member: Candidate;
+  decision?: MemberDecision;
+  feed: DiscoverFeed;
+  onPass: () => void;
+  onLike: () => void;
+  onFollow: () => void;
+  onMessage: () => void;
+  onShare: () => void;
+}) {
+  const badgeLabel = feed === 'following' ? 'Following' : 'New here';
+  const followIcon = decision === 'followed' || decision === 'liked' || decision === 'super_liked'
+    ? 'bookmark'
+    : 'bookmark-outline';
+
+  const content = (
+    <>
+      <View style={styles.featureShade} />
+      <View style={styles.featureTopRow}>
+        <View style={styles.featureNameBadge}>
+          <AppText style={styles.featureBadgeText}>{badgeLabel}</AppText>
+        </View>
+        <PressableScale accessibilityRole="button" onPress={onPass} style={styles.featureCloseButton}>
+          <Ionicons name="close" size={16} color={colors.onAccent} />
+        </PressableScale>
+      </View>
+      <View style={styles.featureSideActions}>
+        <PressableScale accessibilityRole="button" onPress={onLike} style={[styles.featureAction, styles.featureHeart]}>
+          <Ionicons name="heart" size={21} color={colors.onAccent} />
+        </PressableScale>
+        <PressableScale accessibilityRole="button" onPress={onMessage} style={styles.featureAction}>
+          <Ionicons name="chatbubble-ellipses" size={18} color={colors.onAccent} />
+        </PressableScale>
+        <PressableScale accessibilityRole="button" onPress={onFollow} style={styles.featureAction}>
+          <Ionicons name={followIcon} size={18} color={colors.onAccent} />
+        </PressableScale>
+        <PressableScale accessibilityRole="button" onPress={onShare} style={styles.featureAction}>
+          <Ionicons name="arrow-redo" size={18} color={colors.onAccent} />
+        </PressableScale>
+      </View>
+      <View style={styles.featureBottom}>
+        <View style={styles.featureNameLine}>
+          <AppText style={styles.featureMemberName}>
+            {member.nickname}, {member.age}
+          </AppText>
+          <View style={styles.featureVerifiedBadge}>
+            <Ionicons name="checkmark" size={11} color={colors.onAccent} />
+          </View>
+        </View>
+        <View style={styles.featureMetaRow}>
+          <Ionicons name="person-circle-outline" size={12} color="#E3DEEA" />
+          <AppText style={styles.featureMemberMeta}>Digital Creator</AppText>
+        </View>
+        <View style={styles.featureMetaRow}>
+          <Ionicons name="location-outline" size={12} color="#E3DEEA" />
+          <AppText style={styles.featureMemberMeta}>
+            {member.distanceMiles > 0 ? `${member.distanceMiles.toFixed(1)} km away` : 'Registered KaTalk member'}
+          </AppText>
+        </View>
+        <View style={styles.featureInterestRow}>
+          {member.interests.slice(0, 3).map((interest) => (
+            <View key={interest} style={styles.featureInterestChip}>
+              <AppText style={styles.featureInterestText}>{interest}</AppText>
             </View>
           ))}
         </View>
-      </ScrollView>
+      </View>
+    </>
+  );
+
+  if (member.photoUrl) {
+    return (
+      <ImageBackground source={{ uri: member.photoUrl }} imageStyle={styles.featureImage} style={styles.featureCard}>
+        {content}
+      </ImageBackground>
+    );
+  }
+
+  return (
+    <View style={[styles.featureCard, styles.featureFallback]}>
+      <MemberAvatar name={member.nickname} color={member.avatarColor} size={104} borderColor="rgba(255,255,255,0.4)" />
+      {content}
     </View>
   );
 }
@@ -636,9 +701,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted
   },
   content: {
-    padding: 16,
-    gap: 14,
-    paddingBottom: 28,
+    paddingTop: 16,
+    paddingHorizontal: 14,
+    gap: 10,
+    paddingBottom: 30,
     backgroundColor: colors.background
   },
   topBar: {
@@ -648,17 +714,223 @@ const styles = StyleSheet.create({
   },
   screenTitle: {
     color: colors.ink,
-    fontSize: 31,
-    lineHeight: 36,
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '800'
+  },
+  coinPill: {
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#171421',
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  coinPillText: {
+    color: colors.onAccent,
+    fontSize: 12,
     fontWeight: '900'
+  },
+  discoverTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+    marginBottom: 2
+  },
+  discoverTab: {
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)'
+  },
+  discoverTabActive: {
+    backgroundColor: 'rgba(255, 107, 157, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 157, 0.34)'
+  },
+  discoverTabText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700'
+  },
+  discoverTabActiveText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  featureCard: {
+    minHeight: 590,
+    borderRadius: 24,
+    overflow: 'hidden',
+    padding: 12,
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 157, 0.36)'
+  },
+  featureFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    backgroundColor: '#1A1728'
+  },
+  featureImage: {
+    borderRadius: 24
+  },
+  featureShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.16)',
+    borderRadius: 24
+  },
+  featureTopRow: {
+    zIndex: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  featureNameBadge: {
+    minHeight: 24,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,13,24,0.64)'
+  },
+  featureBadgeText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '800'
+  },
+  featureCloseButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(11,13,24,0.6)'
+  },
+  featureSideActions: {
+    position: 'absolute',
+    right: 12,
+    top: 250,
+    gap: 10,
+    zIndex: 3
+  },
+  featureAction: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(20, 18, 30, 0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)'
+  },
+  featureHeart: {
+    backgroundColor: colors.accent
+  },
+  featureBottom: {
+    zIndex: 2,
+    gap: 5,
+    paddingRight: 54,
+    paddingBottom: 2
+  },
+  featureNameLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  featureMemberName: {
+    color: colors.onAccent,
+    fontSize: 24,
+    lineHeight: 29,
+    fontWeight: '800'
+  },
+  featureVerifiedBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  featureMemberMeta: {
+    color: '#E3DEEA',
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600'
+  },
+  featureMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  featureInterestRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6
+  },
+  featureInterestChip: {
+    minHeight: 22,
+    borderRadius: 11,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)'
+  },
+  featureInterestText: {
+    color: colors.onAccent,
+    fontSize: 9,
+    fontWeight: '700'
+  },
+  featureActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center'
+  },
+  featurePassButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  featureLikeButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  featureLikeText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  featureSuperButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.lavender
   },
   videoPanel: {
     padding: 16,
     gap: 14,
-    borderRadius: 20,
+    borderRadius: 22,
     backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#3B1742'
+    borderColor: '#4A2847'
   },
   videoIntro: {
     flexDirection: 'row',
@@ -668,7 +940,7 @@ const styles = StyleSheet.create({
   videoIcon: {
     width: 46,
     height: 46,
-    borderRadius: 16,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent
@@ -698,7 +970,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    borderRadius: 16,
+    borderRadius: 14,
     backgroundColor: colors.accentSoft
   },
   safetyLabel: {

@@ -12,7 +12,7 @@ export type UserProfile = {
   ageRange: string;
   interests: string[];
   comfort: 'shy' | 'balanced' | 'open';
-  authMethod?: 'apple' | 'google' | 'phone';
+  authMethod?: 'apple' | 'google' | 'facebook' | 'phone';
   authContact?: string;
   acceptedTerms: boolean;
   acceptedPrivacy: boolean;

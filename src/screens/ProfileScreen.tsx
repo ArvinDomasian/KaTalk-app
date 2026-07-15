@@ -114,6 +114,16 @@ const monetizationRoadmap = [
   'Later: rewarded ads and AI profile help.'
 ];
 
+function friendlyProfileStatus(message: string) {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('permission denied') || lowerMessage.includes('row level security')) {
+    return 'Profile posts are still syncing. They will appear after the app database access is ready.';
+  }
+
+  return message;
+}
+
 function membershipTierLabel(tier?: SubscriptionAccess['tier']) {
   if (tier === 'vip') {
     return 'KaTalk VIP';
@@ -128,6 +138,24 @@ function membershipTierLabel(tier?: SubscriptionAccess['tier']) {
   }
 
   return 'KaTalk Membership';
+}
+
+function ageFromBirthDate(dateOfBirth: string) {
+  const birthDate = new Date(dateOfBirth);
+
+  if (Number.isNaN(birthDate.getTime())) {
+    return 24;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+
+  return Math.max(18, age);
 }
 
 function activeMembershipTitle(snapshot: SubscriptionSnapshot | null, profile: UserProfile) {
@@ -690,83 +718,94 @@ export function ProfileScreen({
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
           <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>Profile</AppText>
-          <PressableScale
-            accessibilityRole="button"
-            onPress={settingsVisible ? closeSettings : openSettings}
-            style={[styles.profileIconBadge, darkMode && styles.profileIconBadgeDark]}
-          >
-            <ProfileTopActionGlyph close={settingsVisible} color={darkMode ? colors.onAccent : colors.ink} />
-          </PressableScale>
-        </View>
-
-        <View style={[styles.profileHero, darkMode && styles.cardDark]}>
-          <PressableScale
-            accessibilityRole="button"
-            accessibilityLabel="Change profile picture"
-            onPress={openAvatarSettings}
-            style={[styles.avatarCircle, darkMode && styles.avatarCircleDark]}
-          >
-            {profile.avatarUrl ? (
-              <Image source={{ uri: profile.avatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <AppText style={styles.avatarInitial}>
-                  {profile.nickname.trim().charAt(0).toUpperCase() || 'K'}
-                </AppText>
-                <AppText style={styles.avatarFallbackText}>Avatar</AppText>
-              </View>
-            )}
-            <View style={styles.avatarEditBadge}>
-              <AppText style={styles.avatarEditText}>+</AppText>
-            </View>
-            {Platform.OS === 'web'
-              ? React.createElement('input', {
-                  type: 'file',
-                  accept: 'image/*',
-                  onChange: (event: { target?: { files?: ArrayLike<Blob> | null; value?: string } }) => {
-                    const file = event.target?.files?.[0];
-
-                    if (!file) {
-                      return;
-                    }
-
-                    void handleAvatarUpload(file);
-
-                    if (event.target) {
-                      event.target.value = '';
-                    }
-                  },
-                  style: {
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    opacity: 0,
-                    cursor: 'pointer'
-                  }
-                })
-              : null}
-          </PressableScale>
-          <View style={styles.profileCopy}>
-            <AppText style={[styles.profileName, darkMode && styles.textOnDark]}>{profile.nickname}</AppText>
-            <AppText style={[styles.profileMeta, darkMode && styles.mutedOnDark]}>
-              {profile.gender} - Looking for {profile.preference}
-            </AppText>
-            <View style={styles.interestRow}>
-              {profile.interests.slice(0, 4).map((interest) => (
-                <View key={interest} style={[styles.interestChip, darkMode && styles.softSurfaceDark]}>
-                  <AppText style={[styles.interestText, darkMode && styles.textOnDark]}>{interest}</AppText>
-                </View>
-              ))}
+          <View style={styles.profileTopActions}>
+            <View style={[styles.profileCoinPill, darkMode && styles.profileCoinPillDark]}>
+              <Ionicons name="ellipse" size={13} color={colors.gold} />
+              <AppText style={styles.profileCoinText}>{economy.coins.toLocaleString()}</AppText>
             </View>
             <PressableScale
               accessibilityRole="button"
-              onPress={openAvatarSettings}
-              style={[styles.changePhotoButton, darkMode && styles.softSurfaceDark]}
+              onPress={settingsVisible ? closeSettings : openSettings}
+              style={[styles.profileIconBadge, darkMode && styles.profileIconBadgeDark]}
             >
-              <AppText style={styles.changePhotoMark}>+</AppText>
-              <AppText style={styles.changePhotoText}>Change photo</AppText>
+              <ProfileTopActionGlyph close={settingsVisible} color={darkMode ? colors.onAccent : colors.ink} />
             </PressableScale>
+          </View>
+        </View>
+
+        <View style={[styles.profileDetailsCard, darkMode && styles.cardDark]}>
+          <View style={styles.profileDetailsTop}>
+            <View>
+              <View style={styles.profileDetailsNameRow}>
+                <AppText style={[styles.profileDetailsName, darkMode && styles.textOnDark]}>
+                  {profile.nickname}, {ageFromBirthDate(profile.dateOfBirth)}
+                </AppText>
+                <View style={styles.profileVerifiedCheck}>
+                  <Ionicons name="checkmark" size={11} color={colors.onAccent} />
+                </View>
+              </View>
+              <AppText style={[styles.profileDetailsMeta, darkMode && styles.mutedOnDark]}>
+                Content Creator
+              </AppText>
+              <AppText style={[styles.profileDetailsMeta, darkMode && styles.mutedOnDark]}>
+                {profile.preference} - KaTalk member
+              </AppText>
+            </View>
+          </View>
+          <View style={styles.profileLevelStrip}>
+            <View style={styles.profileLevelIcon}>
+              <Ionicons name="ribbon-outline" size={18} color={colors.gold} />
+            </View>
+            <View style={styles.profileLevelCopy}>
+              <View style={styles.profileLevelRow}>
+                <AppText style={styles.profileLevelText}>Level {economy.rewardLevel}</AppText>
+                <AppText style={styles.profileLevelSoul}>Creative Soul</AppText>
+              </View>
+              <View style={styles.profileXpTrack}>
+                <View
+                  style={[
+                    styles.profileXpFill,
+                    { width: `${Math.min(100, Math.round((economy.rewardXp / Math.max(1, economy.rewardXp + 1200)) * 100))}%` }
+                  ]}
+                />
+              </View>
+            </View>
+            <AppText style={styles.profileLevelXp}>
+              {economy.rewardXp.toLocaleString()} XP
+            </AppText>
+          </View>
+          <View style={styles.profileDetailChips}>
+            {profile.interests.slice(0, 4).map((interest) => (
+              <View key={interest} style={[styles.profileDetailChip, darkMode && styles.softSurfaceDark]}>
+                <AppText style={[styles.profileDetailChipText, darkMode && styles.textOnDark]}>{interest}</AppText>
+              </View>
+            ))}
+          </View>
+          <View style={styles.profileMediaGrid}>
+            {[0, 1, 2].map((item) => (
+              <View key={item} style={styles.profileMediaTile}>
+                {profile.avatarUrl ? (
+                  <Image source={{ uri: profile.avatarUrl }} style={styles.profileMediaImage} />
+                ) : (
+                  <Ionicons
+                    name={item === 0 ? 'play-circle' : item === 1 ? 'image' : 'person-circle-outline'}
+                    size={24}
+                    color={colors.accent}
+                  />
+                )}
+              </View>
+            ))}
+          </View>
+          <View style={styles.aboutBlock}>
+            <AppText style={[styles.aboutTitle, darkMode && styles.textOnDark]}>About me</AppText>
+            <AppText style={[styles.aboutText, darkMode && styles.mutedOnDark]}>
+              Looking for genuine conversations around {profile.interests.slice(0, 3).join(', ') || 'shared interests'}.
+            </AppText>
+          </View>
+          <View style={styles.profileFactList}>
+            <ProfileFact icon="person-outline" label={profile.gender} />
+            <ProfileFact icon="sparkles-outline" label={profile.comfort} />
+            <ProfileFact icon="chatbubble-ellipses-outline" label={`${profile.interests[0] ?? 'Deep talks'} conversations`} />
           </View>
         </View>
 
@@ -806,7 +845,7 @@ export function ProfileScreen({
           style={[styles.subscriptionBanner, darkMode && styles.subscriptionBannerDark]}
         >
           <View style={styles.subscriptionIconBubble}>
-            <AppText style={styles.subscriptionIconText}>+</AppText>
+            <Ionicons name="diamond-outline" size={21} color={colors.onAccent} />
           </View>
           <View style={styles.subscriptionBannerCopy}>
             <AppText style={[styles.subscriptionBannerTitle, darkMode && styles.textOnDark]}>
@@ -865,7 +904,9 @@ export function ProfileScreen({
 
         {status && !postComposerVisible ? (
           <View style={[styles.profileStatusNote, darkMode && styles.softSurfaceDark]}>
-            <AppText style={[styles.profileStatusText, darkMode && styles.textOnDark]}>{status}</AppText>
+            <AppText style={[styles.profileStatusText, darkMode && styles.textOnDark]}>
+              {friendlyProfileStatus(status)}
+            </AppText>
           </View>
         ) : null}
 
@@ -899,11 +940,6 @@ export function ProfileScreen({
           </View>
         )}
       </ScrollView>
-      {!settingsVisible ? (
-        <PressableScale accessibilityRole="button" onPress={openPostComposer} style={styles.createPostFab}>
-          <CreatePostIcon />
-        </PressableScale>
-      ) : null}
       <PostComposerModal
         visible={postComposerVisible}
         postText={postText}
@@ -1892,6 +1928,17 @@ function FeatureCounter({
   );
 }
 
+function ProfileFact({ icon, label }: { icon: keyof typeof Ionicons.glyphMap; label: string }) {
+  return (
+    <View style={styles.profileFact}>
+      <Ionicons name={icon} size={14} color={colors.accent} />
+      <AppText style={styles.profileFactText} numberOfLines={1}>
+        {label}
+      </AppText>
+    </View>
+  );
+}
+
 function FeatureAction({
   label,
   onPress,
@@ -2193,7 +2240,7 @@ function SettingsOption({
         <AppText style={[styles.optionTitle, darkMode && styles.textOnDark]}>{title}</AppText>
         <AppText style={[styles.optionMeta, darkMode && styles.drawerMutedText]}>{meta}</AppText>
       </View>
-      <Ionicons name="chevron-forward" size={17} color={darkMode ? '#AEB5C2' : colors.muted} />
+      <Ionicons name="chevron-forward" size={17} color={colors.muted} />
     </PressableScale>
   );
 }
@@ -2465,6 +2512,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between'
   },
+  profileTopActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  profileCoinPill: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#17131F',
+    borderWidth: 1,
+    borderColor: '#332241'
+  },
+  profileCoinPillDark: {
+    backgroundColor: '#17131F',
+    borderColor: '#332241'
+  },
+  profileCoinText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
   screenTitle: {
     color: colors.ink,
     fontSize: 31,
@@ -2553,8 +2625,8 @@ const styles = StyleSheet.create({
     elevation: 12
   },
   settingsDrawerDark: {
-    borderColor: '#2A2E38',
-    backgroundColor: '#151820'
+    borderColor: '#44304D',
+    backgroundColor: '#11121D'
   },
   drawerHandle: {
     alignSelf: 'center',
@@ -2576,7 +2648,7 @@ const styles = StyleSheet.create({
     color: '#BBC1CC'
   },
   drawerRowDark: {
-    backgroundColor: '#222735'
+    backgroundColor: colors.surfaceMuted
   },
   backPanelButton: {
     width: 34,
@@ -3050,10 +3122,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
     padding: 14,
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface
+    borderColor: '#4A2847',
+    backgroundColor: colors.surface,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4
   },
   avatarCircle: {
     width: 90,
@@ -3138,6 +3215,177 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontWeight: '700'
   },
+  profileDetailsCard: {
+    gap: 11,
+    padding: 13,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 157, 0.30)',
+    backgroundColor: '#15101F'
+  },
+  profileDetailsTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10
+  },
+  profileDetailsNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  profileDetailsName: {
+    color: colors.ink,
+    fontSize: 21,
+    lineHeight: 25,
+    fontWeight: '900'
+  },
+  profileVerifiedCheck: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2388FF'
+  },
+  profileDetailsMeta: {
+    marginTop: 2,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
+  },
+  profileLevelStrip: {
+    minHeight: 50,
+    borderRadius: 13,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#21172D',
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  profileLevelIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 186, 101, 0.14)'
+  },
+  profileLevelCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6
+  },
+  profileLevelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8
+  },
+  profileLevelText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
+  profileLevelSoul: {
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800'
+  },
+  profileLevelXp: {
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800'
+  },
+  profileXpTrack: {
+    height: 5,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: '#30263B'
+  },
+  profileXpFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: colors.accent
+  },
+  profileDetailChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6
+  },
+  profileDetailChip: {
+    minHeight: 24,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#21172D',
+    borderWidth: 1,
+    borderColor: '#332241'
+  },
+  profileDetailChipText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '800'
+  },
+  profileMediaGrid: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  profileMediaTile: {
+    flex: 1,
+    aspectRatio: 0.78,
+    borderRadius: 11,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#2D2638',
+    backgroundColor: colors.surfaceMuted
+  },
+  profileMediaImage: {
+    width: '100%',
+    height: '100%'
+  },
+  aboutBlock: {
+    gap: 4
+  },
+  aboutTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  aboutText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700'
+  },
+  profileFactList: {
+    gap: 6
+  },
+  profileFact: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  profileFactText: {
+    flex: 1,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800',
+    textTransform: 'capitalize'
+  },
   adminBanner: {
     minHeight: 72,
     borderRadius: 18,
@@ -3185,11 +3433,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: '#3B1742',
+    borderColor: '#55304F',
     backgroundColor: '#181021'
   },
   subscriptionBannerDark: {
-    borderColor: '#3B1742',
+    borderColor: '#55304F',
     backgroundColor: '#181021'
   },
   subscriptionIconBubble: {
@@ -3198,7 +3446,7 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.lavender
+    backgroundColor: colors.accent
   },
   subscriptionIconText: {
     color: colors.onAccent,
@@ -3232,7 +3480,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#332241',
+    borderColor: '#4A2847',
     padding: 14,
     backgroundColor: colors.surface
   },
@@ -3359,7 +3607,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentSoft
   },
   publicNoteDark: {
-    backgroundColor: '#17283D'
+    backgroundColor: colors.accentSoft
   },
   publicNoteIcon: {
     width: 20,
@@ -3566,8 +3814,8 @@ const styles = StyleSheet.create({
     borderRadius: 33,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#8B6AF2',
-    shadowColor: '#8B6AF2',
+    backgroundColor: colors.accent,
+    shadowColor: colors.accent,
     shadowOpacity: 0.38,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 5 },

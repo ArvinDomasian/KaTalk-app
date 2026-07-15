@@ -6,6 +6,7 @@ node_modules
 .eas-home-local
 .codex-run
 .env
+.env.example
 dist
 web-build
 *.log

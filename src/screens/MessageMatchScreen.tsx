@@ -4,6 +4,7 @@ import {
   Alert,
   Animated,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -12,6 +13,7 @@ import {
   TextInput,
   View
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '../components/AppText';
 import { MemberAvatar } from '../components/MemberAvatar';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -30,7 +32,7 @@ import {
 } from '../services/liveMessageMatchService';
 import { appServices } from '../services/localAppServices';
 import { registeredMemberErrorMessage } from '../services/registeredUserService';
-import { recordConversationStarted } from '../services/userFeatureService';
+import { normalizeUserEconomy, recordConversationStarted } from '../services/userFeatureService';
 import {
   createPublicStory,
   subscribePublicStories,
@@ -58,6 +60,51 @@ type InboxThread = {
   messages: Message[];
   unread: boolean;
 };
+
+function friendlyMemberNotice(message: string) {
+  const lowerMessage = message.toLowerCase();
+
+  if (lowerMessage.includes('permission denied') || lowerMessage.includes('row level security')) {
+    return 'Real member stories are still syncing. They will appear here after the app database access is ready.';
+  }
+
+  return message;
+}
+
+function profileAgeFallback(profile: UserProfile) {
+  const preferredAge = Number.parseInt(profile.ageRange, 10);
+
+  return Number.isFinite(preferredAge) ? preferredAge : 24;
+}
+
+function buildProfilePrompt(member: Candidate) {
+  return member.prompt || 'Looking for calm conversations, shared interests, and real connection.';
+}
+
+function buildConnectionStarter(member: Candidate): Message[] {
+  const now = Date.now();
+
+  return [
+    {
+      id: `connection-system-${member.id}`,
+      sender: 'system',
+      body: `You matched with ${member.nickname} today`,
+      sentAt: new Date(now - 90 * 1000)
+    },
+    {
+      id: `connection-match-${member.id}-1`,
+      sender: 'match',
+      body: `Hey, I liked your vibe. ${buildProfilePrompt(member)}`,
+      sentAt: new Date(now - 60 * 1000)
+    },
+    {
+      id: `connection-me-${member.id}-1`,
+      sender: 'me',
+      body: 'Hi! Nice to meet you here.',
+      sentAt: new Date(now - 40 * 1000)
+    }
+  ];
+}
 
 export function MessageMatchScreen({
   profile,
@@ -92,6 +139,10 @@ export function MessageMatchScreen({
   const [activeSavedMatch, setActiveSavedMatch] = useState<SavedMatch | null>(null);
   const [savedChatMessages, setSavedChatMessages] = useState<Message[]>([]);
   const [savedChatDraft, setSavedChatDraft] = useState('');
+  const [profilePreviewMember, setProfilePreviewMember] = useState<Candidate | null>(null);
+  const [connectionMember, setConnectionMember] = useState<Candidate | null>(null);
+  const [connectionMessages, setConnectionMessages] = useState<Message[]>([]);
+  const [connectionDraft, setConnectionDraft] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const matchCompleteRef = useRef(false);
   const returnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,6 +155,33 @@ export function MessageMatchScreen({
   const timerWiggle = useRef(new Animated.Value(0)).current;
 
   const matchComplete = savedByMe && savedByMatch;
+  const aiMatchPercent = Math.min(96, 86 + Math.min(profile.interests.length, 5) * 2);
+  const economy = normalizeUserEconomy(profile.economy);
+  const insightMetrics = [
+    { label: 'Values', value: Math.min(98, aiMatchPercent + 1) },
+    { label: 'Communication', value: Math.max(82, aiMatchPercent - 1) },
+    { label: 'Lifestyle', value: Math.max(80, aiMatchPercent - 3) },
+    { label: 'Interests', value: Math.min(99, aiMatchPercent + 3) }
+  ];
+  const dailyMatchPreview = inboxThreads.slice(0, 4);
+  const featuredDiscoverMember = inboxThreads[0]?.candidate ?? savedMatches[0]?.candidate ?? null;
+  const profileHomeMember = useMemo<Candidate>(
+    () => ({
+      id: profile.id,
+      nickname: profile.nickname || 'KaTalk member',
+      age: profileAgeFallback(profile),
+      distanceMiles: 0,
+      interests: profile.interests.length > 0 ? profile.interests : ['Coffee', 'Travel', 'Dogs'],
+      prompt: `Looking for ${profile.preference.toLowerCase()} with easy conversation and real energy.`,
+      avatarColor: colors.accent,
+      photoUrl: profile.avatarUrl
+    }),
+    [profile.ageRange, profile.avatarUrl, profile.id, profile.interests, profile.nickname, profile.preference]
+  );
+  const homeFeatureMember = featuredDiscoverMember ?? profileHomeMember;
+  const feedPhotoUrl = homeFeatureMember.photoUrl ?? profile.avatarUrl;
+  const homeFeatureInterests =
+    homeFeatureMember.interests.length > 0 ? homeFeatureMember.interests : ['Coffee', 'Travel', 'Dogs'];
 
   useEffect(() => {
     matchCompleteRef.current = matchComplete;
@@ -700,6 +778,41 @@ export function MessageMatchScreen({
     }
   }
 
+  function likeDiscoverMember(member: Candidate) {
+    setHomeNotice(`You liked ${member.nickname}. Open their profile or start a real match when you are ready.`);
+  }
+
+  function openMemberProfile(member: Candidate) {
+    setProfilePreviewMember(member);
+  }
+
+  function openConnectionWindow(member: Candidate) {
+    setProfilePreviewMember(null);
+    setConnectionMember(member);
+    setConnectionDraft('');
+    setConnectionMessages(buildConnectionStarter(member));
+    onProfileUpdate?.(recordConversationStarted(profile));
+  }
+
+  function sendConnectionPreviewMessage() {
+    const text = connectionDraft.trim();
+
+    if (!text || !connectionMember) {
+      return;
+    }
+
+    setConnectionMessages((current) => [
+      ...current,
+      {
+        id: `connection-me-${connectionMember.id}-${Date.now()}`,
+        sender: 'me',
+        body: text,
+        sentAt: new Date()
+      }
+    ]);
+    setConnectionDraft('');
+  }
+
   return (
     <KeyboardAvoidingView
       style={[styles.root, darkMode && styles.rootDark]}
@@ -744,168 +857,143 @@ export function MessageMatchScreen({
         onSend={sendSavedChatMessage}
         onClose={closeSavedMatchChat}
       />
+      <MemberProfilePreviewModal
+        member={profilePreviewMember}
+        economy={economy}
+        darkMode={darkMode}
+        onClose={() => setProfilePreviewMember(null)}
+        onLike={(member) => likeDiscoverMember(member)}
+        onMessage={(member) => openConnectionWindow(member)}
+      />
+      <MemberConnectionModal
+        member={connectionMember}
+        messages={connectionMessages}
+        draft={connectionDraft}
+        economy={economy}
+        darkMode={darkMode}
+        onDraftChange={setConnectionDraft}
+        onSend={sendConnectionPreviewMessage}
+        onClose={() => {
+          setConnectionMember(null);
+          setConnectionDraft('');
+        }}
+      />
       {status === 'idle' || status === 'searching' ? (
-        <ScrollView contentContainerStyle={styles.chatHome}>
-          <View style={styles.topBar}>
-            <View>
-              <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>KaTalk</AppText>
+        <ScrollView contentContainerStyle={styles.discoverHome} showsVerticalScrollIndicator={false}>
+          <View style={styles.feedCard}>
+            {feedPhotoUrl ? (
+              <ImageBackground
+                source={{ uri: feedPhotoUrl }}
+                imageStyle={styles.feedImage}
+                resizeMode="cover"
+                style={styles.feedImageSurface}
+              />
+            ) : (
+              <View style={styles.feedFallbackSurface}>
+                <MemberAvatar
+                  name={homeFeatureMember.nickname}
+                  photoUrl={profile.avatarUrl}
+                  color={homeFeatureMember.avatarColor}
+                  size={118}
+                  borderColor="rgba(255,255,255,0.22)"
+                />
+                <AppText style={styles.feedFallbackText}>
+                  {isLoadingMembers
+                    ? 'Loading registered members...'
+                    : 'Registered members will appear here'}
+                </AppText>
+              </View>
+            )}
+            <View style={styles.feedShade} />
+            <View style={styles.feedCardTop}>
+              <AppText style={styles.feedTopLabel}>For You</AppText>
+              <View style={styles.feedTopSpacer} />
+              <View style={styles.feedCoinPillOverlay}>
+                <Ionicons name="ellipse" size={9} color={colors.gold} />
+                <AppText style={styles.feedCoinText}>{economy.coins.toLocaleString()}</AppText>
+              </View>
             </View>
-            <PressableScale accessibilityRole="button" style={[styles.roundIcon, darkMode && styles.roundIconDark]}>
-              <SearchGlyph color={darkMode ? colors.onAccent : colors.ink} />
-            </PressableScale>
-          </View>
-
-          <View style={styles.sectionHeader}>
-            <AppText style={[styles.sectionTitleSmall, darkMode && styles.textOnDark]}>Story</AppText>
-            <AppText style={styles.dotsText}>...</AppText>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storyRow}>
+            <View style={styles.feedSideActions}>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Like profile"
+                onPress={() => likeDiscoverMember(homeFeatureMember)}
+                style={[styles.feedActionButton, styles.feedHeartButton]}
+              >
+                <Ionicons name="heart" size={23} color={colors.onAccent} />
+              </PressableScale>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Open message preview"
+                onPress={() => openConnectionWindow(homeFeatureMember)}
+                style={styles.feedActionButton}
+              >
+                <Ionicons name="chatbubble-ellipses" size={20} color={colors.onAccent} />
+              </PressableScale>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Open profile details"
+                onPress={() => openMemberProfile(homeFeatureMember)}
+                style={styles.feedActionButton}
+              >
+                <Ionicons name="person" size={21} color={colors.onAccent} />
+              </PressableScale>
+              <PressableScale
+                accessibilityRole="button"
+                accessibilityLabel="Share profile"
+                onPress={() => Alert.alert('Share profile', `${homeFeatureMember.nickname}'s profile is ready to share inside KaTalk.`)}
+                style={styles.feedActionButton}
+              >
+                <Ionicons name="arrow-redo" size={20} color={colors.onAccent} />
+              </PressableScale>
+            </View>
             <PressableScale
               accessibilityRole="button"
-              onPress={() => setStoryComposerVisible(true)}
-              style={styles.storyItem}
+              accessibilityLabel={`Open ${homeFeatureMember.nickname}'s profile details`}
+              onPress={() => openMemberProfile(homeFeatureMember)}
+              style={styles.feedCardBottom}
             >
-              <View style={[styles.addStory, darkMode && styles.softSurfaceDark]}>
-                <AppText style={[styles.addStoryText, darkMode && styles.textOnDark]}>+</AppText>
+              <View style={styles.feedNameRow}>
+                <AppText style={styles.feedName}>{`${homeFeatureMember.nickname}, ${homeFeatureMember.age}`}</AppText>
+                <View style={styles.feedVerifiedDot}>
+                  <AppText style={styles.feedVerifiedMark}>v</AppText>
+                </View>
+                <AppText style={styles.feedVerifiedText}>✓</AppText>
               </View>
-              <AppText style={[styles.storyName, darkMode && styles.textOnDark]}>Add Story</AppText>
+              <View style={styles.feedMetaStack}>
+                <View style={styles.feedMetaRow}>
+                  <Ionicons name="camera-outline" size={13} color="#E7E2EA" />
+                  <AppText style={styles.feedMeta}>Content Creator</AppText>
+                </View>
+                <View style={styles.feedMetaRow}>
+                  <Ionicons name="location-outline" size={13} color="#E7E2EA" />
+                  <AppText style={styles.feedMeta}>
+                    {homeFeatureMember.distanceMiles > 0
+                      ? `${homeFeatureMember.distanceMiles.toFixed(1)} km away`
+                      : 'KaTalk member'}
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.feedInterestRow}>
+                {homeFeatureInterests.slice(0, 3).map((interest) => (
+                  <View key={interest} style={styles.feedInterestChip}>
+                    <AppText style={styles.feedInterestText}>{interest}</AppText>
+                  </View>
+                ))}
+              </View>
+              {homeNotice ? (
+                <View style={styles.feedNotice}>
+                  <AppText style={styles.feedNoticeText}>{friendlyMemberNotice(homeNotice)}</AppText>
+                </View>
+              ) : null}
+              {searchMessage ? (
+                <View style={styles.feedNotice}>
+                  {status === 'searching' ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+                  <AppText style={styles.feedNoticeText}>{searchMessage}</AppText>
+                </View>
+              ) : null}
             </PressableScale>
-            {stories.map((item) => (
-              <PressableScale
-                key={item.id}
-                accessibilityRole="button"
-                onPress={() => setActiveStory(item)}
-                style={styles.storyItem}
-              >
-                {item.photoUrl ? (
-                  <Image source={{ uri: item.photoUrl }} style={[styles.storyImage, item.mine && styles.myStoryImage]} />
-                ) : (
-                  <View style={[styles.storyImageFallback, item.mine && styles.myStoryImage]}>
-                    <AppText style={styles.storyFallbackText}>
-                      {item.nickname.trim().charAt(0).toUpperCase() || 'K'}
-                    </AppText>
-                  </View>
-                )}
-                <AppText style={[styles.storyName, darkMode && styles.textOnDark]} numberOfLines={1}>
-                  {item.mine ? 'Your story' : item.nickname}
-                </AppText>
-              </PressableScale>
-            ))}
-          </ScrollView>
-
-          <View style={[styles.featureMatch, darkMode && styles.cardDark]}>
-            <View>
-              <AppText style={[styles.featureTitle, darkMode && styles.textOnDark]}>Ready for a real match?</AppText>
-              <AppText style={[styles.featureCopy, darkMode && styles.mutedOnDark]}>
-                Connect with another KaTalk member. Chat ends automatically after 2 minutes.
-              </AppText>
-            </View>
-            {homeNotice ? (
-              <View style={styles.homeNotice}>
-                <AppText style={styles.homeNoticeMark}>OK</AppText>
-                <AppText style={styles.homeNoticeText}>{homeNotice}</AppText>
-              </View>
-            ) : null}
-            {searchMessage ? (
-              <View style={[styles.matchStatusRow, darkMode && styles.softSurfaceDark]}>
-                {status === 'searching' ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-                <AppText style={styles.matchStatusText}>{searchMessage}</AppText>
-              </View>
-            ) : null}
-            <PrimaryButton
-              label={status === 'searching' ? 'Finding...' : 'Find Chat'}
-              icon="chatbubble-outline"
-              disabled={status === 'searching'}
-              onPress={findChat}
-              style={styles.findButton}
-            />
           </View>
-
-          <View style={styles.sectionHeader}>
-            <AppText style={[styles.sectionTitleSmall, darkMode && styles.textOnDark]}>Chat</AppText>
-            <AppText style={styles.dotsText}>...</AppText>
-          </View>
-          <View style={styles.chatList}>
-            {isLoadingMembers ? (
-              <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
-                <ActivityIndicator size="small" color={colors.accent} />
-                <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
-                  Loading registered KaTalk members...
-                </AppText>
-              </View>
-            ) : null}
-            {!isLoadingMembers && memberLoadNotice ? (
-              <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
-                <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
-                  {memberLoadNotice}
-                </AppText>
-              </View>
-            ) : null}
-            {!isLoadingMembers && !memberLoadNotice && inboxThreads.length === 0 ? (
-              <View style={[styles.emptyState, darkMode && styles.softSurfaceDark]}>
-                <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
-                  No registered members yet
-                </AppText>
-                <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
-                  Real users will appear here after they register and complete their profile.
-                </AppText>
-              </View>
-            ) : null}
-            {inboxThreads.map((thread) => (
-              <PressableScale
-                key={thread.id}
-                accessibilityRole="button"
-                onPress={() => openInboxThread(thread.id)}
-                style={[styles.chatRow, darkMode && styles.chatRowDark]}
-              >
-                <MemberAvatar
-                  name={thread.candidate.nickname}
-                  photoUrl={thread.candidate.photoUrl}
-                  color={thread.candidate.avatarColor}
-                  size={50}
-                />
-                <View style={styles.chatPreview}>
-                  <AppText style={[styles.chatName, darkMode && styles.textOnDark]}>
-                    {thread.candidate.nickname}
-                  </AppText>
-                  <AppText style={styles.chatSnippet} numberOfLines={1}>
-                    {thread.messages[thread.messages.length - 1]?.body ?? thread.candidate.prompt}
-                  </AppText>
-                </View>
-                <View style={styles.chatMeta}>
-                  <AppText style={styles.chatTime}>Registered</AppText>
-                  {thread.unread ? <View style={styles.unreadDot} /> : null}
-                </View>
-              </PressableScale>
-            ))}
-          </View>
-
-          {savedMatches.length > 0 ? (
-            <View style={[styles.savedCard, darkMode && styles.cardDark]}>
-              <AppText style={[styles.savedTitle, darkMode && styles.textOnDark]}>Saved matches</AppText>
-              {savedMatches.map((match) => (
-                <PressableScale
-                  key={match.id}
-                  accessibilityRole="button"
-                  onPress={() => openSavedMatch(match)}
-                  style={styles.savedRow}
-                >
-                  <MemberAvatar
-                    name={match.candidate.nickname}
-                    photoUrl={match.candidate.photoUrl}
-                    color={match.candidate.avatarColor}
-                    size={38}
-                  />
-                  <View style={styles.savedInfo}>
-                    <AppText style={[styles.savedName, darkMode && styles.textOnDark]}>Saved chat</AppText>
-                    <AppText style={styles.savedMeta}>
-                      {match.candidate.interests.join(' / ')} - tap to message
-                    </AppText>
-                  </View>
-                </PressableScale>
-              ))}
-            </View>
-          ) : null}
         </ScrollView>
       ) : null}
 
@@ -1026,15 +1114,58 @@ export function MessageMatchScreen({
             </View>
           ) : (
             <View style={[styles.endedPanel, darkMode && styles.actionPanelDark]}>
-              <AppText style={[styles.endedTitle, darkMode && styles.textOnDark]}>
-                {status === 'saved' ? 'Saved match' : 'Chat ended'}
-              </AppText>
-              <AppText style={[styles.endedCopy, darkMode && styles.mutedOnDark]}>
-                {status === 'saved'
-                  ? 'Both people saved before the timer ended. Returning to matching.'
-                  : 'The chat closed automatically after 2 minutes. Returning to matching.'}
-              </AppText>
-              <PrimaryButton label="Back To Matching" icon="refresh-outline" onPress={() => resetToIdle()} />
+              {status === 'saved' ? (
+                <>
+                  <Ionicons name="sparkles" size={28} color={colors.gold} />
+                  <AppText style={[styles.endedTitle, styles.matchConfirmTitle]}>
+                    It's a Match!
+                  </AppText>
+                  <View style={styles.matchConfirmAvatars}>
+                    <MemberAvatar
+                      name={profile.nickname}
+                      photoUrl={profile.avatarUrl}
+                      color={colors.accent}
+                      size={64}
+                      borderColor={colors.accent}
+                    />
+                    <View style={styles.matchHeartBadge}>
+                      <Ionicons name="heart" size={18} color={colors.onAccent} />
+                    </View>
+                    <MemberAvatar
+                      name={candidate.nickname}
+                      photoUrl={candidate.photoUrl}
+                      color={candidate.avatarColor}
+                      size={64}
+                      borderColor={colors.lavender}
+                    />
+                  </View>
+                  <AppText style={[styles.endedCopy, darkMode && styles.mutedOnDark]}>
+                    You and {candidate.nickname} both saved each other before the timer ended.
+                  </AppText>
+                  <View style={styles.matchRewardRow}>
+                    <View style={styles.matchRewardPill}>
+                      <Ionicons name="ellipse" size={12} color={colors.gold} />
+                      <AppText style={styles.matchRewardText}>+100</AppText>
+                    </View>
+                    <View style={styles.matchRewardPill}>
+                      <Ionicons name="flash" size={12} color={colors.lavender} />
+                      <AppText style={styles.matchRewardText}>XP +200</AppText>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <AppText style={[styles.endedTitle, darkMode && styles.textOnDark]}>Chat ended</AppText>
+                  <AppText style={[styles.endedCopy, darkMode && styles.mutedOnDark]}>
+                    The chat closed automatically after 2 minutes. Returning to matching.
+                  </AppText>
+                </>
+              )}
+              <PrimaryButton
+                label={status === 'saved' ? 'Keep Swiping' : 'Back To Matching'}
+                icon="refresh-outline"
+                onPress={() => resetToIdle()}
+              />
             </View>
           )}
         </View>
@@ -1105,6 +1236,258 @@ function SearchGlyph({ color }: { color: string }) {
       <View style={[styles.searchLens, { borderColor: color }]} />
       <View style={[styles.searchHandle, { backgroundColor: color }]} />
     </View>
+  );
+}
+
+function MemberProfilePreviewModal({
+  member,
+  economy,
+  darkMode,
+  onClose,
+  onLike,
+  onMessage
+}: {
+  member: Candidate | null;
+  economy: { coins: number; rewardLevel: number; rewardXp: number };
+  darkMode: boolean;
+  onClose: () => void;
+  onLike: (member: Candidate) => void;
+  onMessage: (member: Candidate) => void;
+}) {
+  const interests = member?.interests.length ? member.interests : ['Coffee', 'Travel', 'Dogs', 'Beach'];
+  const mediaTiles = [0, 1, 2];
+
+  return (
+    <Modal transparent visible={Boolean(member)} animationType="slide" onRequestClose={onClose}>
+      {member ? (
+        <View style={styles.previewOverlay}>
+          <PressableScale accessibilityRole="button" onPress={onClose} style={styles.previewBackdrop} />
+          <View style={[styles.previewScreen, styles.previewSheet, darkMode && styles.previewScreenDark]}>
+          <View style={styles.previewGrabber} />
+          <View style={styles.previewHeader}>
+            <PressableScale accessibilityRole="button" onPress={onClose} style={styles.previewBackButton}>
+              <AppText style={styles.previewBackText}>{'<'}</AppText>
+            </PressableScale>
+            <View style={styles.previewCoinPill}>
+              <Ionicons name="ellipse" size={9} color={colors.gold} />
+              <AppText style={styles.previewCoinText}>{economy.coins.toLocaleString()}</AppText>
+            </View>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.previewContent} showsVerticalScrollIndicator={false}>
+            <View style={styles.previewIdentityRow}>
+              <MemberAvatar
+                name={member.nickname}
+                photoUrl={member.photoUrl}
+                color={member.avatarColor}
+                size={38}
+                borderColor="#2D1C35"
+              />
+              <View style={styles.previewIdentityCopy}>
+                <View style={styles.previewNameRow}>
+                  <AppText style={styles.previewName}>{`${member.nickname}, ${member.age}`}</AppText>
+                  <View style={styles.previewVerifiedDot}>
+                    <AppText style={styles.previewVerifiedMark}>v</AppText>
+                  </View>
+                </View>
+                <AppText style={styles.previewMeta}>Content Creator</AppText>
+                <AppText style={styles.previewMeta}>
+                  {member.distanceMiles > 0 ? `${member.distanceMiles.toFixed(1)} km away` : 'KaTalk member'}
+                </AppText>
+              </View>
+            </View>
+
+            <View style={styles.previewLevelCard}>
+              <View style={styles.previewBadge}>
+                <AppText style={styles.previewBadgeText}>8</AppText>
+              </View>
+              <View style={styles.previewLevelCopy}>
+                <AppText style={styles.previewLevelTitle}>Level {Math.max(8, economy.rewardLevel)}</AppText>
+                <AppText style={styles.previewLevelMeta}>Creative Soul</AppText>
+                <View style={styles.previewProgressTrack}>
+                  <View style={[styles.previewProgressFill, { width: `${Math.min(92, 38 + economy.rewardXp / 40)}%` }]} />
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.previewChipRow}>
+              {interests.slice(0, 4).map((interest) => (
+                <View key={interest} style={styles.previewChip}>
+                  <AppText style={styles.previewChipText}>{interest}</AppText>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.previewMediaGrid}>
+              {mediaTiles.map((tile) => (
+                <View key={tile} style={styles.previewMediaTile}>
+                  {member.photoUrl ? (
+                    <Image source={{ uri: member.photoUrl }} style={styles.previewMediaImage} />
+                  ) : (
+                    <MemberAvatar
+                      name={member.nickname}
+                      color={member.avatarColor}
+                      size={56}
+                      borderColor="rgba(255,255,255,0.10)"
+                    />
+                  )}
+                  {tile === 1 ? (
+                    <View style={styles.previewPlayBadge}>
+                      <AppText style={styles.previewPlayText}>{'>'}</AppText>
+                    </View>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.previewAbout}>
+              <AppText style={styles.previewSectionTitle}>About me</AppText>
+              <AppText style={styles.previewAboutText}>{buildProfilePrompt(member)}</AppText>
+              <AppText style={styles.previewFact}>@ Looking for good vibes.</AppText>
+              <AppText style={styles.previewFact}>@ Easy conversations.</AppText>
+              <AppText style={styles.previewFact}>@ {interests.slice(0, 2).join(' and ')}</AppText>
+            </View>
+          </ScrollView>
+
+          <View style={styles.previewFooter}>
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Open message screen"
+              onPress={() => onMessage(member)}
+              style={styles.previewMessageButton}
+            >
+              <AppText style={styles.previewMessageText}>Message</AppText>
+            </PressableScale>
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Like profile from preview"
+              onPress={() => onLike(member)}
+              style={styles.previewLikeButton}
+            >
+              <Ionicons name="heart" size={20} color={colors.onAccent} />
+            </PressableScale>
+          </View>
+          </View>
+        </View>
+      ) : null}
+    </Modal>
+  );
+}
+
+function MemberConnectionModal({
+  member,
+  messages,
+  draft,
+  economy,
+  darkMode,
+  onDraftChange,
+  onSend,
+  onClose
+}: {
+  member: Candidate | null;
+  messages: Message[];
+  draft: string;
+  economy: { coins: number };
+  darkMode: boolean;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+}) {
+  const chatMessages = messages.filter((message) => message.sender !== 'system');
+  const matchBanner = messages.find((message) => message.sender === 'system')?.body;
+
+  return (
+    <Modal visible={Boolean(member)} animationType="slide" onRequestClose={onClose}>
+      {member ? (
+        <KeyboardAvoidingView
+          style={[styles.connectionScreen, darkMode && styles.connectionScreenDark]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.connectionHeader}>
+            <PressableScale accessibilityRole="button" onPress={onClose} style={styles.connectionBackButton}>
+              <AppText style={styles.connectionBackText}>{'<'}</AppText>
+            </PressableScale>
+            <MemberAvatar
+              name={member.nickname}
+              photoUrl={member.photoUrl}
+              color={member.avatarColor}
+              size={32}
+              borderColor="#3A2942"
+            />
+            <View style={styles.connectionTitleBlock}>
+              <AppText style={styles.connectionName}>{member.nickname}</AppText>
+              <AppText style={styles.connectionStatus}>Active now</AppText>
+            </View>
+            <View style={styles.connectionCoinPill}>
+              <AppText style={styles.previewCoinMark}>C</AppText>
+              <AppText style={styles.previewCoinText}>{economy.coins.toLocaleString()}</AppText>
+            </View>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.connectionMessages} showsVerticalScrollIndicator={false}>
+            {matchBanner ? (
+              <View style={styles.connectionMatchBanner}>
+                <MemberAvatar
+                  name={member.nickname}
+                  photoUrl={member.photoUrl}
+                  color={member.avatarColor}
+                  size={28}
+                  borderColor="#4C294A"
+                />
+                <View style={styles.connectionBannerCopy}>
+                  <AppText style={styles.connectionBannerText}>{matchBanner}</AppText>
+                  <AppText style={styles.connectionBannerSubtext}>Today</AppText>
+                </View>
+                <View style={styles.connectionBonusPill}>
+                  <AppText style={styles.connectionBonusText}>+50</AppText>
+                </View>
+              </View>
+            ) : null}
+
+            {chatMessages.map((message) => {
+              const isMine = message.sender === 'me';
+
+              return (
+                <View
+                  key={message.id}
+                  style={[
+                    styles.connectionBubble,
+                    isMine ? styles.connectionBubbleMine : styles.connectionBubbleMatch
+                  ]}
+                >
+                  <AppText
+                    style={[
+                      styles.connectionBubbleText,
+                      isMine ? styles.connectionBubbleTextMine : styles.connectionBubbleTextMatch
+                    ]}
+                  >
+                    {message.body}
+                  </AppText>
+                  <AppText style={styles.connectionBubbleTime}>
+                    {message.sentAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </AppText>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.connectionInputRow}>
+            <TextInput
+              value={draft}
+              onChangeText={onDraftChange}
+              placeholder="Type a message..."
+              placeholderTextColor="#777789"
+              style={styles.connectionInput}
+              returnKeyType="send"
+              onSubmitEditing={onSend}
+            />
+            <PressableScale accessibilityRole="button" onPress={onSend} style={styles.connectionSendButton}>
+              <AppText style={styles.connectionSendText}>{'>'}</AppText>
+            </PressableScale>
+          </View>
+        </KeyboardAvoidingView>
+      ) : null}
+    </Modal>
   );
 }
 
@@ -1505,6 +1888,732 @@ const styles = StyleSheet.create({
     gap: 17,
     backgroundColor: colors.background
   },
+  discoverHome: {
+    flexGrow: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 26,
+    backgroundColor: colors.background
+  },
+  discoverTopBar: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  discoverTitle: {
+    color: colors.onAccent,
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '800'
+  },
+  discoverCoinPill: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: '#3A2B43',
+    backgroundColor: '#171421'
+  },
+  discoverCoinMark: {
+    color: colors.gold,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
+  discoverCoinText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  discoverTabs: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  discoverTab: {
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)'
+  },
+  discoverTabActive: {
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accent
+  },
+  discoverTabText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  discoverTabActiveText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  feedCard: {
+    width: '100%',
+    maxWidth: 390,
+    height: 642,
+    alignSelf: 'center',
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#6B3D4A',
+    backgroundColor: '#151522',
+    position: 'relative'
+  },
+  feedImageSurface: {
+    ...StyleSheet.absoluteFillObject
+  },
+  feedImage: {
+    borderRadius: 24,
+    resizeMode: 'cover'
+  },
+  feedFallbackSurface: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    backgroundColor: '#171421'
+  },
+  feedFallbackText: {
+    maxWidth: 230,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '800',
+    textAlign: 'center'
+  },
+  feedShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.18)'
+  },
+  feedCardTop: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    top: 12,
+    zIndex: 3,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  feedTopLabel: {
+    color: colors.onAccent,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '800'
+  },
+  feedTopSpacer: {
+    flex: 1
+  },
+  feedCoinPillOverlay: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(13,14,22,0.78)'
+  },
+  feedCoinText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
+  newHereBadge: {
+    minHeight: 26,
+    borderRadius: 13,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)'
+  },
+  newHereText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '900'
+  },
+  feedSideActions: {
+    position: 'absolute',
+    right: 12,
+    bottom: 146,
+    zIndex: 3,
+    gap: 10
+  },
+  feedActionButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17,18,29,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)'
+  },
+  feedHeartButton: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
+  },
+  feedCardBottom: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 3,
+    paddingHorizontal: 14,
+    paddingTop: 22,
+    paddingBottom: 18,
+    gap: 8,
+    backgroundColor: 'rgba(8,9,18,0.58)'
+  },
+  feedNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5
+  },
+  feedName: {
+    color: colors.onAccent,
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: '900'
+  },
+  feedVerifiedText: {
+    display: 'none',
+    color: colors.violet,
+    fontSize: 14,
+    lineHeight: 16,
+    fontWeight: '900'
+  },
+  feedVerifiedDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.violet
+  },
+  feedVerifiedMark: {
+    color: colors.onAccent,
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '900'
+  },
+  feedMeta: {
+    color: '#E3DEEA',
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  feedMetaStack: {
+    gap: 2
+  },
+  feedMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5
+  },
+  feedInterestRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6
+  },
+  feedInterestChip: {
+    minHeight: 24,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)'
+  },
+  feedInterestText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '800'
+  },
+  feedNotice: {
+    minHeight: 34,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(17,18,29,0.78)'
+  },
+  feedNoticeText: {
+    flex: 1,
+    color: colors.onAccent,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800'
+  },
+  previewScreen: {
+    flex: 1,
+    paddingTop: 42,
+    paddingHorizontal: 14,
+    paddingBottom: 18,
+    backgroundColor: colors.background
+  },
+  previewOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(6,7,14,0.62)'
+  },
+  previewBackdrop: {
+    ...StyleSheet.absoluteFillObject
+  },
+  previewSheet: {
+    flex: 0,
+    maxHeight: '86%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 10,
+    paddingBottom: 14,
+    borderWidth: 1,
+    borderColor: '#442A48',
+    borderBottomWidth: 0,
+    shadowColor: colors.accent,
+    shadowOffset: { width: 0, height: -12 },
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    elevation: 18
+  },
+  previewGrabber: {
+    width: 54,
+    height: 5,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.18)'
+  },
+  previewScreenDark: {
+    backgroundColor: colors.background
+  },
+  previewHeader: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  previewBackButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)'
+  },
+  previewBackText: {
+    color: colors.onAccent,
+    fontSize: 19,
+    lineHeight: 21,
+    fontWeight: '900'
+  },
+  previewCoinPill: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: '#3A2B43',
+    backgroundColor: '#15131F'
+  },
+  previewCoinMark: {
+    color: colors.gold,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
+  previewCoinText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
+  previewContent: {
+    paddingTop: 12,
+    paddingBottom: 16,
+    gap: 12
+  },
+  previewIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  previewIdentityCopy: {
+    flex: 1,
+    gap: 2
+  },
+  previewNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5
+  },
+  previewName: {
+    color: colors.onAccent,
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '900'
+  },
+  previewVerifiedDot: {
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.violet
+  },
+  previewVerifiedMark: {
+    color: colors.onAccent,
+    fontSize: 8,
+    lineHeight: 10,
+    fontWeight: '900'
+  },
+  previewMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700'
+  },
+  previewLevelCard: {
+    minHeight: 62,
+    borderRadius: 14,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#392342',
+    backgroundColor: '#15131F'
+  },
+  previewBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#4B244E'
+  },
+  previewBadgeText: {
+    color: colors.accent,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '900'
+  },
+  previewLevelCopy: {
+    flex: 1,
+    gap: 4
+  },
+  previewLevelTitle: {
+    color: colors.onAccent,
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '900'
+  },
+  previewLevelMeta: {
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '700'
+  },
+  previewProgressTrack: {
+    height: 5,
+    borderRadius: 3,
+    overflow: 'hidden',
+    backgroundColor: '#2A2230'
+  },
+  previewProgressFill: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.accent
+  },
+  previewChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7
+  },
+  previewChip: {
+    minHeight: 24,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#201D2A'
+  },
+  previewChipText: {
+    color: colors.onAccent,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800'
+  },
+  previewMediaGrid: {
+    flexDirection: 'row',
+    gap: 8
+  },
+  previewMediaTile: {
+    flex: 1,
+    height: 112,
+    borderRadius: 12,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#181622'
+  },
+  previewMediaImage: {
+    width: '100%',
+    height: '100%'
+  },
+  previewPlayBadge: {
+    position: 'absolute',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)'
+  },
+  previewPlayText: {
+    color: colors.onAccent,
+    fontSize: 16,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  previewAbout: {
+    gap: 6
+  },
+  previewSectionTitle: {
+    color: colors.onAccent,
+    fontSize: 13,
+    lineHeight: 16,
+    fontWeight: '900'
+  },
+  previewAboutText: {
+    color: '#D7D3DE',
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700'
+  },
+  previewFact: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  previewFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 8
+  },
+  previewMessageButton: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  previewMessageText: {
+    color: colors.onAccent,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  previewLikeButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#392342',
+    backgroundColor: '#171421'
+  },
+  previewLikeText: {
+    color: colors.accent,
+    fontSize: 17,
+    lineHeight: 20,
+    fontWeight: '900'
+  },
+  connectionScreen: {
+    flex: 1,
+    paddingTop: 42,
+    paddingHorizontal: 12,
+    paddingBottom: 14,
+    backgroundColor: colors.background
+  },
+  connectionScreenDark: {
+    backgroundColor: colors.background
+  },
+  connectionHeader: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  connectionBackButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  connectionBackText: {
+    color: colors.onAccent,
+    fontSize: 19,
+    lineHeight: 22,
+    fontWeight: '900'
+  },
+  connectionTitleBlock: {
+    flex: 1
+  },
+  connectionName: {
+    color: colors.onAccent,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  connectionStatus: {
+    color: colors.success,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800'
+  },
+  connectionCoinPill: {
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#15131F',
+    borderWidth: 1,
+    borderColor: '#3A2B43'
+  },
+  connectionMessages: {
+    flexGrow: 1,
+    paddingTop: 12,
+    paddingBottom: 14,
+    gap: 10
+  },
+  connectionMatchBanner: {
+    minHeight: 58,
+    borderRadius: 15,
+    padding: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#4B2A52',
+    backgroundColor: '#15131F'
+  },
+  connectionBannerCopy: {
+    flex: 1
+  },
+  connectionBannerText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800'
+  },
+  connectionBannerSubtext: {
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '700'
+  },
+  connectionBonusPill: {
+    minHeight: 26,
+    borderRadius: 13,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2A1F24'
+  },
+  connectionBonusText: {
+    color: colors.gold,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: '900'
+  },
+  connectionBubble: {
+    maxWidth: '78%',
+    borderRadius: 15,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    gap: 4
+  },
+  connectionBubbleMine: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.lavender
+  },
+  connectionBubbleMatch: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#20202B'
+  },
+  connectionBubbleText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700'
+  },
+  connectionBubbleTextMine: {
+    color: colors.onAccent
+  },
+  connectionBubbleTextMatch: {
+    color: '#ECE8F0'
+  },
+  connectionBubbleTime: {
+    color: '#898795',
+    fontSize: 9,
+    lineHeight: 11,
+    fontWeight: '700',
+    alignSelf: 'flex-end'
+  },
+  connectionInputRow: {
+    minHeight: 48,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#31243B',
+    backgroundColor: '#12131D'
+  },
+  connectionInput: {
+    flex: 1,
+    minHeight: 42,
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  connectionSendButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  connectionSendText: {
+    color: colors.onAccent,
+    fontSize: 16,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1630,22 +2739,162 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   featureMatch: {
-    borderRadius: 20,
+    borderRadius: 24,
     backgroundColor: '#181021',
-    padding: 16,
-    gap: 12,
+    padding: 18,
+    gap: 14,
     borderWidth: 1,
-    borderColor: '#3B1742'
+    borderColor: '#55304F',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6
   },
   featureTitle: {
     color: colors.ink,
-    fontSize: 23,
-    lineHeight: 28,
+    fontSize: 22,
+    lineHeight: 27,
     fontWeight: '900'
   },
   featureCopy: {
     color: colors.muted,
-    marginTop: 3
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700'
+  },
+  aiCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  aiCoinPill: {
+    alignSelf: 'flex-start',
+    minHeight: 28,
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  aiCoinText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  dailyMatchCard: {
+    minHeight: 70,
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)'
+  },
+  dailyMatchTitle: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  dailyMatchMeta: {
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '700',
+    marginTop: 2
+  },
+  dailyAvatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  dailyAvatarFallback: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginLeft: -6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderWidth: 2,
+    borderColor: '#181021'
+  },
+  dailyAvatarInitial: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  aiInsightRow: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'center'
+  },
+  matchScoreRing: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    padding: 8,
+    backgroundColor: colors.accent,
+    borderWidth: 10,
+    borderColor: colors.lavender,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  matchScoreInner: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#181021'
+  },
+  matchScoreText: {
+    color: colors.onAccent,
+    fontSize: 25,
+    lineHeight: 29,
+    fontWeight: '900'
+  },
+  matchScoreMeta: {
+    color: colors.muted,
+    fontSize: 9,
+    fontWeight: '900'
+  },
+  matchMetricList: {
+    flex: 1,
+    gap: 8
+  },
+  matchMetricRow: {
+    gap: 5
+  },
+  matchMetricLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  matchMetricLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: '800'
+  },
+  matchMetricValue: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: '900'
+  },
+  matchMetricTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceMuted
+  },
+  matchMetricFill: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.accent
   },
   homeNotice: {
     minHeight: 44,
@@ -1691,7 +2940,8 @@ const styles = StyleSheet.create({
   },
   findButton: {
     alignSelf: 'flex-start',
-    minWidth: 134
+    minWidth: 156,
+    borderRadius: 18
   },
   chatList: {
     gap: 2
@@ -1723,7 +2973,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.line
+    borderBottomColor: colors.line,
+    paddingVertical: 8
   },
   chatRowDark: {
     borderBottomColor: colors.line
@@ -1835,7 +3086,8 @@ const styles = StyleSheet.create({
   },
   myBubble: {
     alignSelf: 'flex-end',
-    backgroundColor: colors.accent
+    backgroundColor: colors.lavender,
+    borderColor: colors.lavender
   },
   systemBubble: {
     alignSelf: 'center',
@@ -1936,18 +3188,67 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   endedPanel: {
-    padding: 16,
-    gap: 10,
+    padding: 18,
+    gap: 13,
     borderTopWidth: 1,
     borderTopColor: colors.line,
-    backgroundColor: colors.surface
+    backgroundColor: colors.surface,
+    alignItems: 'center'
   },
   endedTitle: {
     fontSize: 18,
-    fontWeight: '900'
+    fontWeight: '900',
+    textAlign: 'center'
   },
   endedCopy: {
-    color: colors.muted
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 19,
+    fontWeight: '700'
+  },
+  matchConfirmTitle: {
+    color: colors.accent,
+    fontSize: 30,
+    lineHeight: 36
+  },
+  matchConfirmAvatars: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 2
+  },
+  matchHeartBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginHorizontal: -7,
+    zIndex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderWidth: 3,
+    borderColor: colors.surface
+  },
+  matchRewardRow: {
+    flexDirection: 'row',
+    gap: 10
+  },
+  matchRewardPill: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  matchRewardText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
   },
   savedCard: {
     width: '100%',

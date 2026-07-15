@@ -36,6 +36,8 @@ type SupabaseBlockRow = {
   blocked_id?: string | null;
 };
 
+const PREVIEW_MEMBER_STORAGE_KEY = 'katalk.previewMembers.v1';
+
 const avatarPalette = [
   colors.accent,
   '#8B6AF2',
@@ -52,6 +54,78 @@ function normalizedInterests(interests: string[] | undefined) {
     : [];
 
   return cleanedInterests.length > 0 ? cleanedInterests : ['Quiet conversations'];
+}
+
+function previewMembersAreEnabled() {
+  try {
+    const browserScope = globalThis as typeof globalThis & {
+      location?: { search?: string };
+    };
+
+    return browserScope.location?.search?.includes('katalkPreviewMembers=1') ?? false;
+  } catch {
+    return false;
+  }
+}
+
+function loadPreviewMemberProfiles(profile: UserProfile, maxCount: number): PublicMemberProfile[] {
+  if (!previewMembersAreEnabled()) {
+    return [];
+  }
+
+  try {
+    const browserScope = globalThis as typeof globalThis & {
+      localStorage?: { getItem: (key: string) => string | null };
+    };
+    const rawMembers = browserScope.localStorage?.getItem(PREVIEW_MEMBER_STORAGE_KEY);
+
+    if (!rawMembers) {
+      return [];
+    }
+
+    const parsedMembers = JSON.parse(rawMembers);
+
+    if (!Array.isArray(parsedMembers)) {
+      return [];
+    }
+
+    const currentPublicProfile = publicProfileFromUserProfile(profile, profile.id);
+
+    return parsedMembers
+      .map((member): PublicMemberProfile | null => {
+        if (!member || typeof member !== 'object') {
+          return null;
+        }
+
+        const candidate = member as Partial<PublicMemberProfile>;
+
+        if (!candidate.uid || !candidate.nickname) {
+          return null;
+        }
+
+        const interests = normalizedInterests(candidate.interests);
+
+        return {
+          uid: candidate.uid,
+          nickname: candidate.nickname,
+          dateOfBirth: candidate.dateOfBirth || '2000-01-01',
+          gender: candidate.gender || 'Prefer not to say',
+          preference: candidate.preference || 'Everyone',
+          ageRange: candidate.ageRange || '18-99',
+          interests,
+          comfort: candidate.comfort ?? 'balanced',
+          prompt: candidate.prompt || `Registered KaTalk member who likes ${interests.slice(0, 2).join(' and ')}.`,
+          photoUrl: candidate.photoUrl,
+          updatedAtMs: candidate.updatedAtMs ?? Date.now()
+        };
+      })
+      .filter((member): member is PublicMemberProfile => Boolean(member))
+      .filter((member) => member.uid !== profile.id)
+      .filter((member) => profilesAreCompatible(currentPublicProfile, member))
+      .slice(0, maxCount);
+  } catch {
+    return [];
+  }
 }
 
 function publicProfileFromSupabaseRow(row: SupabasePublicProfileRow): PublicMemberProfile {
@@ -224,6 +298,12 @@ export async function publishRegisteredUserProfile(profile: UserProfile) {
 }
 
 export async function listRegisteredMemberProfiles(profile: UserProfile, maxCount = 40) {
+  const previewMembers = loadPreviewMemberProfiles(profile, maxCount);
+
+  if (previewMembers.length > 0) {
+    return previewMembers;
+  }
+
   const supabase = getSupabaseClient();
   const user = await getCurrentSupabaseUser();
 

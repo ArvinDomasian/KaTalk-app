@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Modal, StyleSheet, View } from 'react-native';
+import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -26,17 +27,22 @@ import {
 import { colors } from './src/theme';
 import type { ActiveTab, ThemeMode, UserProfile } from './src/types';
 
-type TabIconName = 'message' | 'rooms' | 'video' | 'rewards' | 'profile';
+type TabIconName = 'home' | 'search' | 'trophy' | 'chat' | 'profile';
 
 const tabs: Array<{ key: ActiveTab; label: string; icon: TabIconName }> = [
-  { key: 'video', label: 'Discover', icon: 'video' },
-  { key: 'message', label: 'AI Match', icon: 'message' },
-  { key: 'rooms', label: 'Rooms', icon: 'rooms' },
-  { key: 'rewards', label: 'Rewards', icon: 'rewards' },
+  { key: 'message', label: 'Home', icon: 'home' },
+  { key: 'video', label: 'Discover', icon: 'search' },
+  { key: 'rewards', label: 'Rewards', icon: 'trophy' },
+  { key: 'rooms', label: 'Messages', icon: 'chat' },
   { key: 'profile', label: 'Profile', icon: 'profile' }
 ];
 
 export default function App() {
+  useFonts({
+    'Poppins-Regular': require('./assets/fonts/Poppins-Regular.ttf'),
+    'Poppins-Medium': require('./assets/fonts/Poppins-Medium.ttf'),
+    'Poppins-Bold': require('./assets/fonts/Poppins-Bold.ttf')
+  });
   const [profile, setProfile] = useState<UserProfile | null>(() => loadStoredProfile());
   const [isEnteringApp, setIsEnteringApp] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -45,6 +51,7 @@ export default function App() {
   const [isVideoCalling, setIsVideoCalling] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminDashboardVisible, setAdminDashboardVisible] = useState(false);
+  const [quickAddVisible, setQuickAddVisible] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadStoredThemeMode());
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const darkMode = themeMode === 'dark';
@@ -101,7 +108,7 @@ export default function App() {
     transitionTimerRef.current = setTimeout(() => {
       setProfile(nextProfile);
       setIsEnteringApp(false);
-    }, 1400);
+    }, 450);
   }
 
   async function logOut() {
@@ -139,6 +146,11 @@ export default function App() {
 
     setThemeMode(nextThemeMode);
     saveStoredThemeMode(nextThemeMode);
+  }
+
+  function openQuickTab(nextTab: ActiveTab) {
+    setQuickAddVisible(false);
+    setActiveTab(nextTab);
   }
 
   const activeScreen = useMemo(() => {
@@ -185,7 +197,13 @@ export default function App() {
     }
 
     if (activeTab === 'rooms') {
-      return <VoiceRoomsScreen profile={profile} darkMode={darkMode} />;
+      return (
+        <VoiceRoomsScreen
+          profile={profile}
+          darkMode={darkMode}
+          onOpenMessageMatch={() => setActiveTab('message')}
+        />
+      );
     }
 
     if (activeTab === 'video') {
@@ -233,38 +251,63 @@ export default function App() {
     profile && !isEnteringApp && !isLoggingOut && !isMessageChatting && !isVideoCalling
       && !adminDashboardVisible
   );
+  const shouldShowCreateButton = shouldShowTabs && activeTab !== 'profile';
 
   return (
     <SafeAreaProvider>
       <SafeAreaView style={[styles.root, darkMode && styles.rootDark]}>
-      <StatusBar style={darkMode ? 'light' : 'dark'} />
+      <StatusBar style="light" />
       <View style={[styles.shell, shouldShowTabs && styles.shellWithTabs]}>
         {activeScreen}
       </View>
       {shouldShowTabs ? (
-        <View style={[styles.tabBar, darkMode && styles.tabBarDark]}>
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            const inactiveColor = darkMode ? '#AEB5C2' : colors.muted;
+        <>
+          {shouldShowCreateButton ? (
+            <PressableScale
+              accessibilityRole="button"
+              accessibilityLabel="Create"
+              style={styles.floatingCreateButton}
+              onPress={() => setQuickAddVisible(true)}
+            >
+              <AppText style={styles.floatingCreateGlyph}>+</AppText>
+            </PressableScale>
+          ) : null}
+          <View style={[styles.tabBar, darkMode && styles.tabBarDark]}>
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.key;
+              const glyphColor = isActive ? colors.accent : colors.muted;
 
-            return (
-              <PressableScale
-                key={tab.key}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                onPress={() => setActiveTab(tab.key)}
-              >
-                <View style={[styles.tabMark, isActive && styles.tabMarkActive]}>
-                  <AppTabGlyph name={tab.icon} color={isActive ? colors.onAccent : inactiveColor} />
-                </View>
-                <AppText style={[styles.tabLabel, darkMode && styles.tabLabelDark, isActive && styles.tabLabelActive]}>
-                  {tab.label}
-                </AppText>
-              </PressableScale>
-            );
-          })}
-        </View>
+              return (
+                <PressableScale
+                  key={tab.key}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isActive }}
+                  style={[styles.tabButton, isActive && styles.tabButtonActive]}
+                  onPress={() => setActiveTab(tab.key)}
+                >
+                  <View style={[styles.tabMark, isActive && styles.tabMarkActive]}>
+                    <AppTabGlyph name={tab.icon} color={glyphColor} />
+                  </View>
+                  <AppText style={[
+                    styles.tabLabel,
+                    darkMode && styles.tabLabelDark,
+                    isActive && styles.tabLabelActive
+                  ]}>
+                    {tab.label}
+                  </AppText>
+                </PressableScale>
+              );
+            })}
+          </View>
+          <QuickAddModal
+            visible={quickAddVisible && shouldShowCreateButton}
+            darkMode={darkMode}
+            onClose={() => setQuickAddVisible(false)}
+            onCreatePost={() => openQuickTab('profile')}
+            onAddStory={() => openQuickTab('message')}
+            onFindChat={() => openQuickTab('message')}
+          />
+        </>
       ) : null}
       </SafeAreaView>
     </SafeAreaProvider>
@@ -272,7 +315,39 @@ export default function App() {
 }
 
 function AppTabGlyph({ name, color }: { name: TabIconName; color: string }) {
-  if (name === 'message') {
+  if (name === 'home') {
+    return (
+      <View style={styles.homeGlyph}>
+        <View style={[styles.homeRoof, { borderBottomColor: color }]} />
+        <View style={[styles.homeBody, { borderColor: color }]}>
+          <View style={[styles.homeDoor, { backgroundColor: color }]} />
+        </View>
+      </View>
+    );
+  }
+
+  if (name === 'search') {
+    return (
+      <View style={styles.glyphBox}>
+        <View style={[styles.searchLens, { borderColor: color }]} />
+        <View style={[styles.searchHandle, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  if (name === 'trophy') {
+    return (
+      <View style={styles.trophyGlyph}>
+        <View style={[styles.trophyHandleLeft, { borderColor: color }]} />
+        <View style={[styles.trophyHandleRight, { borderColor: color }]} />
+        <View style={[styles.trophyCup, { backgroundColor: color }]} />
+        <View style={[styles.trophyStem, { backgroundColor: color }]} />
+        <View style={[styles.trophyBase, { backgroundColor: color }]} />
+      </View>
+    );
+  }
+
+  if (name === 'chat') {
     return (
       <View style={styles.glyphBox}>
         <View style={[styles.messageGlyph, { borderColor: color }]}>
@@ -282,40 +357,66 @@ function AppTabGlyph({ name, color }: { name: TabIconName; color: string }) {
     );
   }
 
-  if (name === 'rooms') {
-    return (
-      <View style={styles.glyphBox}>
-        <View style={[styles.micHead, { borderColor: color }]} />
-        <View style={[styles.micStem, { backgroundColor: color }]} />
-        <View style={[styles.micBase, { backgroundColor: color }]} />
-      </View>
-    );
-  }
-
-  if (name === 'video') {
-    return (
-      <View style={styles.videoGlyph}>
-        <View style={[styles.videoBody, { borderColor: color }]} />
-        <View style={[styles.videoTail, { borderLeftColor: color }]} />
-      </View>
-    );
-  }
-
-  if (name === 'rewards') {
-    return (
-      <View style={styles.glyphBox}>
-        <View style={[styles.trophyCup, { borderColor: color }]} />
-        <View style={[styles.trophyStem, { backgroundColor: color }]} />
-        <View style={[styles.trophyBase, { backgroundColor: color }]} />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.glyphBox}>
       <View style={[styles.profileHead, { backgroundColor: color }]} />
       <View style={[styles.profileBody, { borderColor: color }]} />
     </View>
+  );
+}
+
+function QuickAddModal({
+  visible,
+  darkMode,
+  onClose,
+  onCreatePost,
+  onAddStory,
+  onFindChat
+}: {
+  visible: boolean;
+  darkMode: boolean;
+  onClose: () => void;
+  onCreatePost: () => void;
+  onAddStory: () => void;
+  onFindChat: () => void;
+}) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.quickAddOverlay}>
+        <PressableScale accessibilityRole="button" style={styles.quickAddBackdrop} onPress={onClose} />
+        <View style={[styles.quickAddSheet, darkMode && styles.quickAddSheetDark]}>
+          <View style={styles.quickAddHandle} />
+          <AppText style={styles.quickAddTitle}>Create</AppText>
+          <PressableScale style={styles.quickAddOption} onPress={onCreatePost}>
+            <View style={styles.quickAddIcon}>
+              <AppText style={styles.quickAddIconText}>+</AppText>
+            </View>
+            <View style={styles.quickAddCopy}>
+              <AppText style={styles.quickAddOptionTitle}>Create post</AppText>
+              <AppText style={styles.quickAddOptionMeta}>Go to Profile and post on your wall.</AppText>
+            </View>
+          </PressableScale>
+          <PressableScale style={styles.quickAddOption} onPress={onAddStory}>
+            <View style={styles.quickAddIcon}>
+              <AppText style={styles.quickAddIconText}>24</AppText>
+            </View>
+            <View style={styles.quickAddCopy}>
+              <AppText style={styles.quickAddOptionTitle}>Add story</AppText>
+              <AppText style={styles.quickAddOptionMeta}>Open Home stories for a 24-hour update.</AppText>
+            </View>
+          </PressableScale>
+          <PressableScale style={styles.quickAddOption} onPress={onFindChat}>
+            <View style={styles.quickAddIcon}>
+              <AppText style={styles.quickAddIconText}>?</AppText>
+            </View>
+            <View style={styles.quickAddCopy}>
+              <AppText style={styles.quickAddOptionTitle}>Find chat</AppText>
+              <AppText style={styles.quickAddOptionMeta}>Jump back to the real match screen.</AppText>
+            </View>
+          </PressableScale>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -332,59 +433,183 @@ const styles = StyleSheet.create({
     flex: 1
   },
   shellWithTabs: {
-    paddingBottom: 92
+    paddingBottom: 104
+  },
+  floatingCreateButton: {
+    position: 'absolute',
+    left: '50%',
+    bottom: 86,
+    width: 56,
+    height: 56,
+    marginLeft: -28,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.42,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 9,
+    zIndex: 20
+  },
+  floatingCreateGlyph: {
+    color: colors.onAccent,
+    fontSize: 34,
+    lineHeight: 36,
+    fontWeight: '700'
   },
   tabBar: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 10,
+    left: 14,
+    right: 14,
+    bottom: 12,
     flexDirection: 'row',
-    gap: 5,
+    alignItems: 'center',
+    gap: 2,
     paddingHorizontal: 8,
-    paddingVertical: 7,
-    borderRadius: 28,
+    paddingVertical: 8,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.surface,
-    shadowColor: '#F238A6',
-    shadowOpacity: 0.24,
-    shadowRadius: 20,
+    borderColor: colors.surface,
+    backgroundColor: '#0F1018',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
     elevation: 6
   },
   tabBarDark: {
-    borderColor: '#31223D',
-    backgroundColor: '#10111C',
+    borderColor: colors.surface,
+    backgroundColor: '#0F1018',
     shadowColor: '#000000',
     shadowOpacity: 0.34
   },
   tabButton: {
     flex: 1,
-    minHeight: 54,
-    borderRadius: 24,
+    minHeight: 58,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3
+    gap: 5
   },
   tabButtonActive: {
-    backgroundColor: colors.accent
+    backgroundColor: 'rgba(255, 107, 157, 0.10)'
   },
   tabMark: {
     width: 24,
-    height: 22,
-    borderRadius: 11,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center'
   },
   tabMarkActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)'
+    backgroundColor: 'rgba(255, 107, 157, 0.16)'
   },
   glyphBox: {
-    width: 22,
-    height: 20,
+    width: 24,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  homeGlyph: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative'
+  },
+  homeRoof: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderBottomWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    marginBottom: -2
+  },
+  homeBody: {
+    width: 16,
+    height: 13,
+    borderWidth: 2,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
+    alignItems: 'center',
+    justifyContent: 'flex-end'
+  },
+  homeDoor: {
+    width: 4,
+    height: 6,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2
+  },
+  searchLens: {
+    width: 13,
+    height: 13,
+    borderWidth: 2,
+    borderRadius: 7,
+    marginTop: -2,
+    marginLeft: -2
+  },
+  searchHandle: {
+    width: 8,
+    height: 2,
+    borderRadius: 1,
+    marginTop: -1,
+    marginLeft: 9,
+    transform: [{ rotate: '45deg' }]
+  },
+  trophyGlyph: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative'
+  },
+  trophyCup: {
+    width: 15,
+    height: 11,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 4,
+    borderBottomLeftRadius: 6,
+    borderBottomRightRadius: 6,
+    zIndex: 2
+  },
+  trophyHandleLeft: {
+    position: 'absolute',
+    top: 4,
+    left: 2,
+    width: 7,
+    height: 8,
+    borderWidth: 2,
+    borderRightWidth: 0,
+    borderTopLeftRadius: 5,
+    borderBottomLeftRadius: 5
+  },
+  trophyHandleRight: {
+    position: 'absolute',
+    top: 4,
+    right: 2,
+    width: 7,
+    height: 8,
+    borderWidth: 2,
+    borderLeftWidth: 0,
+    borderTopRightRadius: 5,
+    borderBottomRightRadius: 5
+  },
+  trophyStem: {
+    width: 4,
+    height: 4,
+    marginTop: -1
+  },
+  trophyBase: {
+    width: 14,
+    height: 3,
+    borderRadius: 2
   },
   messageGlyph: {
     width: 18,
@@ -402,46 +627,6 @@ const styles = StyleSheet.create({
     borderRightWidth: 6,
     borderRightColor: 'transparent'
   },
-  micHead: {
-    width: 10,
-    height: 14,
-    borderWidth: 2,
-    borderRadius: 6
-  },
-  micStem: {
-    width: 2,
-    height: 5,
-    borderRadius: 1,
-    marginTop: -1
-  },
-  micBase: {
-    width: 12,
-    height: 2,
-    borderRadius: 1
-  },
-  videoGlyph: {
-    width: 24,
-    height: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  videoBody: {
-    width: 15,
-    height: 12,
-    borderWidth: 2,
-    borderRadius: 4
-  },
-  videoTail: {
-    width: 0,
-    height: 0,
-    marginLeft: 2,
-    borderTopWidth: 5,
-    borderBottomWidth: 5,
-    borderLeftWidth: 7,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent'
-  },
   profileHead: {
     width: 8,
     height: 8,
@@ -456,33 +641,92 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 8,
     borderBottomWidth: 0
   },
-  trophyCup: {
-    width: 15,
-    height: 11,
-    borderWidth: 2,
-    borderTopWidth: 3,
-    borderBottomLeftRadius: 7,
-    borderBottomRightRadius: 7
-  },
-  trophyStem: {
-    width: 3,
-    height: 5,
-    borderRadius: 2
-  },
-  trophyBase: {
-    width: 13,
-    height: 2,
-    borderRadius: 1
-  },
   tabLabel: {
     fontSize: 10,
     color: colors.muted,
-    fontWeight: '700'
+    fontWeight: '700',
+    letterSpacing: 0
   },
   tabLabelDark: {
-    color: '#AEB5C2'
+    color: colors.muted
   },
   tabLabelActive: {
-    color: colors.onAccent
+    color: colors.accent
+  },
+  quickAddOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end'
+  },
+  quickAddBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.48)'
+  },
+  quickAddSheet: {
+    marginHorizontal: 18,
+    marginBottom: 112,
+    padding: 16,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 157, 0.22)',
+    backgroundColor: '#15131D',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 10
+  },
+  quickAddSheetDark: {
+    backgroundColor: '#15131D'
+  },
+  quickAddHandle: {
+    alignSelf: 'center',
+    width: 46,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.20)',
+    marginBottom: 12
+  },
+  quickAddTitle: {
+    color: colors.ink,
+    fontSize: 19,
+    fontWeight: '800',
+    marginBottom: 12
+  },
+  quickAddOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    marginBottom: 10
+  },
+  quickAddIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  quickAddIconText: {
+    color: colors.onAccent,
+    fontSize: 18,
+    fontWeight: '800'
+  },
+  quickAddCopy: {
+    flex: 1
+  },
+  quickAddOptionTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '800'
+  },
+  quickAddOptionMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2
   }
 });

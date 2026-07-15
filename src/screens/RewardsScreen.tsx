@@ -31,6 +31,75 @@ type Mission = {
   xp: number;
 };
 
+type HighlightItem = {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  caption: string;
+  tone: string;
+};
+
+const coinProducts = [
+  { coins: 100, price: 'PHP 49.00', bonus: null },
+  { coins: 250, price: 'PHP 99.00', bonus: '10% Extra' },
+  { coins: 600, price: 'PHP 199.00', bonus: '20% Extra' },
+  { coins: 1300, price: 'PHP 399.00', bonus: '30% Extra' },
+  { coins: 2800, price: 'PHP 799.00', bonus: '40% Extra' }
+];
+
+const keyFeatureHighlights: HighlightItem[] = [
+  {
+    icon: 'videocam',
+    title: 'Video First',
+    caption: 'See the real person before a deeper match.',
+    tone: colors.accent
+  },
+  {
+    icon: 'sparkles',
+    title: 'AI Match',
+    caption: 'Compatibility insights guide better choices.',
+    tone: colors.coral
+  },
+  {
+    icon: 'trophy',
+    title: 'Rewards',
+    caption: 'Earn coins, XP, levels, and streak progress.',
+    tone: colors.lavender
+  },
+  {
+    icon: 'shield-checkmark',
+    title: 'Safety',
+    caption: 'Report, block, verify, and control visibility.',
+    tone: colors.success
+  }
+];
+
+const gamificationHighlights: HighlightItem[] = [
+  {
+    icon: 'ellipse',
+    title: 'Earn Coins',
+    caption: 'Complete actions to earn coins.',
+    tone: colors.gold
+  },
+  {
+    icon: 'ribbon',
+    title: 'Level Up',
+    caption: 'Gain XP and unlock new badges.',
+    tone: colors.coral
+  },
+  {
+    icon: 'diamond',
+    title: 'Unlock Perks',
+    caption: 'Use coins to access premium-style boosts.',
+    tone: colors.violet
+  },
+  {
+    icon: 'flame',
+    title: 'Stay Consistent',
+    caption: 'Keep your streak and earn more.',
+    tone: colors.warn
+  }
+];
+
 function isSameLocalDate(value?: string) {
   if (!value) {
     return false;
@@ -128,6 +197,12 @@ export function RewardsScreen({
     }
 
     applyRewardResult(claimMissionReward(profile, mission.id, mission.coins, mission.xp));
+  }
+
+  function handleCoinProductPress(coins: number) {
+    setStatus(
+      `${coins.toLocaleString()} coins needs a real store product first. Add the product in Google Play Console, App Store Connect, and RevenueCat before launch.`
+    );
   }
 
   return (
@@ -264,6 +339,36 @@ export function RewardsScreen({
           </View>
         </View>
 
+        <View style={styles.highlightCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <AppText style={styles.sectionTitle}>Key Features</AppText>
+              <AppText style={styles.sectionMeta}>The core KaTalk loop users can actually use.</AppText>
+            </View>
+            <Ionicons name="grid" size={19} color={colors.accent} />
+          </View>
+          <View style={styles.highlightGrid}>
+            {keyFeatureHighlights.map((item) => (
+              <HighlightTile key={item.title} item={item} />
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.highlightCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <AppText style={styles.sectionTitle}>Gamification Highlights</AppText>
+              <AppText style={styles.sectionMeta}>Rewards that make the app feel active without fake payments.</AppText>
+            </View>
+            <Ionicons name="sparkles" size={19} color={colors.coral} />
+          </View>
+          <View style={styles.highlightGrid}>
+            {gamificationHighlights.map((item) => (
+              <HighlightTile key={item.title} item={item} />
+            ))}
+          </View>
+        </View>
+
         <View style={styles.premiumCard}>
           <Ionicons name="diamond" size={28} color={colors.lavender} />
           <AppText style={styles.premiumTitle}>
@@ -283,6 +388,37 @@ export function RewardsScreen({
               {paidMember ? 'Manage Membership' : 'Try 3 Days Free'}
             </AppText>
           </PressableScale>
+        </View>
+
+        <View style={styles.coinStoreCard}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <AppText style={styles.sectionTitle}>Get More Coins</AppText>
+              <AppText style={styles.sectionMeta}>Use coins to unlock premium gestures, boosts, and rewards.</AppText>
+            </View>
+            <Ionicons name="ellipse" size={18} color={colors.gold} />
+          </View>
+          <View style={styles.coinProductList}>
+            {coinProducts.map((product) => (
+              <PressableScale
+                key={product.coins}
+                accessibilityRole="button"
+                onPress={() => handleCoinProductPress(product.coins)}
+                style={styles.coinProductRow}
+              >
+                <View style={styles.coinProductIcon}>
+                  <Ionicons name="ellipse" size={20} color={colors.gold} />
+                </View>
+                <View style={styles.coinProductCopy}>
+                  <AppText style={styles.coinProductTitle}>{product.coins.toLocaleString()} Coins</AppText>
+                  {product.bonus ? <AppText style={styles.coinProductBonus}>{product.bonus}</AppText> : null}
+                </View>
+                <View style={styles.coinProductPrice}>
+                  <AppText style={styles.coinProductPriceText}>{product.price}</AppText>
+                </View>
+              </PressableScale>
+            ))}
+          </View>
         </View>
 
         {status ? (
@@ -326,6 +462,18 @@ function Achievement({
     <View style={[styles.achievement, active && styles.achievementActive]}>
       <Ionicons name={icon} size={22} color={active ? colors.onAccent : colors.muted} />
       <AppText style={[styles.achievementText, active && styles.achievementTextActive]}>{label}</AppText>
+    </View>
+  );
+}
+
+function HighlightTile({ item }: { item: HighlightItem }) {
+  return (
+    <View style={styles.highlightTile}>
+      <View style={[styles.highlightIcon, { backgroundColor: `${item.tone}22` }]}>
+        <Ionicons name={item.icon} size={20} color={item.tone} />
+      </View>
+      <AppText style={styles.highlightTitle}>{item.title}</AppText>
+      <AppText style={styles.highlightCaption}>{item.caption}</AppText>
     </View>
   );
 }
@@ -376,12 +524,17 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   levelCard: {
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 16,
     gap: 14,
     borderWidth: 1,
-    borderColor: '#3B1742',
-    backgroundColor: '#181021'
+    borderColor: '#55304F',
+    backgroundColor: '#181021',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5
   },
   levelHeader: {
     flexDirection: 'row',
@@ -417,7 +570,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.lavender
+    backgroundColor: colors.coral
   },
   xpBarTrack: {
     height: 10,
@@ -436,11 +589,11 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   dailyCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 14,
     gap: 14,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: '#3D2B46',
     backgroundColor: colors.surface
   },
   sectionHeader: {
@@ -479,7 +632,7 @@ const styles = StyleSheet.create({
   },
   rewardDayToday: {
     borderWidth: 1,
-    borderColor: colors.accent
+    borderColor: colors.coral
   },
   rewardDayText: {
     color: colors.muted,
@@ -508,11 +661,11 @@ const styles = StyleSheet.create({
     color: colors.muted
   },
   missionCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     padding: 14,
     gap: 12,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: '#3D2B46',
     backgroundColor: colors.surface
   },
   missionList: {
@@ -533,7 +686,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.lavender
+    backgroundColor: colors.accent
   },
   missionBody: {
     flex: 1,
@@ -572,7 +725,7 @@ const styles = StyleSheet.create({
   missionFill: {
     height: '100%',
     borderRadius: 3,
-    backgroundColor: colors.lavender
+    backgroundColor: colors.coral
   },
   missionClaim: {
     minWidth: 54,
@@ -655,6 +808,48 @@ const styles = StyleSheet.create({
   achievementTextActive: {
     color: colors.onAccent
   },
+  highlightCard: {
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#3D2B46',
+    backgroundColor: colors.surface
+  },
+  highlightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10
+  },
+  highlightTile: {
+    width: '48%',
+    minHeight: 142,
+    borderRadius: 18,
+    padding: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#2D2638',
+    backgroundColor: colors.surfaceMuted
+  },
+  highlightIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  highlightTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    lineHeight: 18,
+    fontWeight: '900'
+  },
+  highlightCaption: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
   premiumCard: {
     borderRadius: 22,
     padding: 18,
@@ -684,6 +879,70 @@ const styles = StyleSheet.create({
   },
   premiumButtonText: {
     color: colors.onAccent,
+    fontWeight: '900'
+  },
+  coinStoreCard: {
+    borderRadius: 22,
+    padding: 14,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#3D2B46',
+    backgroundColor: colors.surface
+  },
+  coinProductList: {
+    gap: 10
+  },
+  coinProductRow: {
+    minHeight: 72,
+    borderRadius: 16,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: '#2D2638'
+  },
+  coinProductIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2A1E17'
+  },
+  coinProductCopy: {
+    flex: 1,
+    gap: 4
+  },
+  coinProductTitle: {
+    color: colors.onAccent,
+    fontSize: 14,
+    fontWeight: '900'
+  },
+  coinProductBonus: {
+    alignSelf: 'flex-start',
+    color: colors.onAccent,
+    fontSize: 10,
+    fontWeight: '900',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: colors.accent
+  },
+  coinProductPrice: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#171421',
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  coinProductPriceText: {
+    color: colors.onAccent,
+    fontSize: 11,
     fontWeight: '900'
   },
   statusCard: {

@@ -24,7 +24,7 @@ const defaultSteps: LoadingStepConfig[] = [
 export function LoadingScreen({
   title = 'Preparing KaTalk',
   subtitle = 'Setting up your anonymous profile and safety controls.',
-  steps = defaultSteps
+  steps = []
 }: Props) {
   return (
     <View style={styles.root}>
@@ -34,11 +34,13 @@ export function LoadingScreen({
       <AppText style={styles.title}>{title}</AppText>
       <AppText style={styles.subtitle}>{subtitle}</AppText>
       <ActivityIndicator size="large" color={colors.accent} style={styles.spinner} />
-      <View style={styles.steps}>
-        {steps.map((step) => (
-          <LoadingStep key={step.label} icon={step.icon} label={step.label} />
-        ))}
-      </View>
+      {steps.length > 0 ? (
+        <View style={styles.steps}>
+          {steps.map((step) => (
+            <LoadingStep key={step.label} icon={step.icon} label={step.label} />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }

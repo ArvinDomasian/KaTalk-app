@@ -9,38 +9,64 @@ import { VoiceRoomStage } from '../components/VoiceRoomStage';
 import { appServices } from '../services/localAppServices';
 import { avatarColorForId, registeredMemberErrorMessage } from '../services/registeredUserService';
 import { colors } from '../theme';
+import type { SavedMatch } from '../services/contracts';
 import type { UserProfile, VoiceRoom } from '../types';
 
 type Props = {
   profile: UserProfile;
   darkMode?: boolean;
+  onOpenMessageMatch?: () => void;
 };
 
-export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
+export function VoiceRoomsScreen({ profile, darkMode = false, onOpenMessageMatch }: Props) {
   const [rooms, setRooms] = useState<VoiceRoom[]>([]);
+  const [savedConnections, setSavedConnections] = useState<SavedMatch[]>([]);
   const [muted, setMuted] = useState(true);
   const [handRaised, setHandRaised] = useState(false);
   const [isLoadingRooms, setIsLoadingRooms] = useState(false);
   const [roomLoadNotice, setRoomLoadNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    void refreshRooms();
+    void refreshConnections();
   }, [profile.id]);
 
   const activeRoom = rooms.find((room) => room.isJoined) ?? null;
 
-  async function refreshRooms() {
+  async function refreshConnections() {
     setIsLoadingRooms(true);
     setRoomLoadNotice(null);
 
-    try {
-      setRooms(await appServices.rooms.list(profile));
-    } catch (error) {
+    const [roomResult, savedResult] = await Promise.allSettled([
+      appServices.rooms.list(profile),
+      appServices.savedMatches.list(profile)
+    ]);
+
+    if (roomResult.status === 'fulfilled') {
+      setRooms(roomResult.value);
+    } else {
       setRooms([]);
-      setRoomLoadNotice(registeredMemberErrorMessage(error));
-    } finally {
-      setIsLoadingRooms(false);
+      setRoomLoadNotice(registeredMemberErrorMessage(roomResult.reason));
     }
+
+    if (savedResult.status === 'fulfilled') {
+      setSavedConnections(savedResult.value);
+    } else {
+      setSavedConnections([]);
+    }
+
+    setIsLoadingRooms(false);
+  }
+
+  function openSavedConnection(match: SavedMatch) {
+    if (onOpenMessageMatch) {
+      onOpenMessageMatch();
+      return;
+    }
+
+    Alert.alert(
+      'Saved conversation',
+      `${match.candidate.nickname}'s saved chat is available from the Home tab saved matches area.`
+    );
   }
 
   function joinRoom(roomId: string) {
@@ -114,56 +140,160 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
   return (
     <View style={[styles.root, darkMode && styles.rootDark]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.hero}>
-          <View style={styles.heroTop}>
-            <PressableScale accessibilityRole="button" style={styles.glassButton}>
-              <Ionicons name="arrow-back" size={20} color={colors.onAccent} />
-            </PressableScale>
-            <View style={styles.locationPill}>
-              <AppText style={styles.locationText}>Registered members</AppText>
-              <Ionicons name="people" size={14} color={colors.ink} />
+        <View style={styles.topBar}>
+          <View style={styles.titleBlock}>
+            <AppText style={[styles.screenTitle, darkMode && styles.textOnDark]}>
+              Chat & Connection
+            </AppText>
+            <AppText style={[styles.screenSubtitle, darkMode && styles.mutedOnDark]}>
+              Saved chats and live voice spaces from real KaTalk members.
+            </AppText>
+          </View>
+          <PressableScale
+            accessibilityRole="button"
+            accessibilityLabel="Refresh chat and connection list"
+            onPress={() => void refreshConnections()}
+            style={styles.refreshButton}
+          >
+            <Ionicons name="refresh" size={18} color={colors.onAccent} />
+          </PressableScale>
+        </View>
+
+        <View style={[styles.connectionHero, darkMode && styles.cardDark]}>
+          <View style={styles.connectionHeroTop}>
+            <View style={styles.avatarStack}>
+              {savedConnections.slice(0, 3).map((match, index) => (
+                <View key={match.id} style={[styles.avatarStackItem, { left: index * 32 }]}>
+                  <MemberAvatar
+                    name={match.candidate.nickname}
+                    photoUrl={match.candidate.photoUrl}
+                    color={match.candidate.avatarColor}
+                    size={54}
+                    borderColor={colors.background}
+                  />
+                </View>
+              ))}
+              {savedConnections.length === 0
+                ? rooms.slice(0, 3).map((room, index) => (
+                    <View key={room.id} style={[styles.avatarStackItem, { left: index * 32 }]}>
+                      <MemberAvatar
+                        name={room.host}
+                        color={avatarColorForId(room.hostId ?? room.id)}
+                        size={54}
+                        borderColor={colors.background}
+                      />
+                    </View>
+                  ))
+                : null}
+              {savedConnections.length === 0 && rooms.length === 0 ? (
+                <View style={styles.heroEmptyAvatar}>
+                  <Ionicons name="chatbubble-ellipses" size={28} color={colors.onAccent} />
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.activeBadge}>
+              <View style={styles.activeDot} />
+              <AppText style={styles.activeBadgeText}>
+                {savedConnections.length + rooms.length} active
+              </AppText>
             </View>
           </View>
 
-          <View style={styles.heroMemberRow}>
-            {rooms.slice(0, 4).map((room) => (
-              <MemberAvatar
-                key={room.id}
-                name={room.host}
-                color={avatarColorForId(room.hostId ?? room.id)}
-                size={58}
-                borderColor="rgba(255,255,255,0.6)"
-              />
-            ))}
-            {rooms.length === 0 ? (
-              <View style={styles.heroEmptyAvatar}>
-                <Ionicons name="mic-outline" size={28} color={colors.onAccent} />
-              </View>
-            ) : null}
+          <View style={styles.connectionHeroBottom}>
+            <AppText style={styles.connectionHeroTitle}>Real conversations</AppText>
+            <AppText style={styles.connectionHeroCopy}>
+              Open saved matches from Home, or join a live room when you want a low-pressure group conversation.
+            </AppText>
           </View>
 
-          <View style={styles.heroBottom}>
-            <AppText style={styles.distanceText}>{rooms.length} registered voice rooms</AppText>
-            <AppText style={styles.heroName}>Real Member Voice Rooms</AppText>
-            <AppText style={styles.heroCopy}>
-              Join low-pressure group conversations hosted by registered KaTalk members.
+          <View style={styles.connectionStats}>
+            <View style={styles.connectionStat}>
+              <AppText style={styles.connectionStatValue}>{savedConnections.length}</AppText>
+              <AppText style={styles.connectionStatLabel}>Saved</AppText>
+            </View>
+            <View style={styles.connectionStat}>
+              <AppText style={styles.connectionStatValue}>{rooms.length}</AppText>
+              <AppText style={styles.connectionStatLabel}>Rooms</AppText>
+            </View>
+            <View style={styles.connectionStat}>
+              <AppText style={styles.connectionStatValue}>
+                {rooms.reduce((total, room) => total + room.participants, 0)}
+              </AppText>
+              <AppText style={styles.connectionStatLabel}>Members</AppText>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <View style={styles.titleBlock}>
+            <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>
+              Saved conversations
+            </AppText>
+            <AppText style={[styles.sectionMeta, darkMode && styles.mutedOnDark]}>
+              Matches both people saved before the 2-minute timer ended.
             </AppText>
           </View>
         </View>
 
-        <View style={[styles.notice, darkMode && styles.cardDark]}>
-          <Ionicons name="mic-outline" size={22} color={colors.accent} />
-            <AppText style={[styles.noticeText, darkMode && styles.textOnDark]}>
-            Android/iOS builds join a real Agora voice channel. Browser preview shows the same
-            room controls without live audio.
-          </AppText>
+        {savedConnections.length === 0 ? (
+          <View style={[styles.emptyState, darkMode && styles.cardDark]}>
+            <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
+              No saved conversations yet
+            </AppText>
+            <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
+              When both people save a 2-minute match, it appears here.
+            </AppText>
+          </View>
+        ) : null}
+
+        {savedConnections.map((match) => (
+          <PressableScale
+            key={match.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Open saved conversation with ${match.candidate.nickname}`}
+            onPress={() => openSavedConnection(match)}
+            style={[styles.savedConnectionCard, darkMode && styles.cardDark]}
+          >
+            <MemberAvatar
+              name={match.candidate.nickname}
+              photoUrl={match.candidate.photoUrl}
+              color={match.candidate.avatarColor}
+              size={56}
+              borderColor={colors.accent}
+            />
+            <View style={styles.savedConnectionCopy}>
+              <AppText style={[styles.savedConnectionName, darkMode && styles.textOnDark]}>
+                {match.candidate.nickname}
+              </AppText>
+              <AppText style={[styles.savedConnectionMeta, darkMode && styles.mutedOnDark]} numberOfLines={1}>
+                Saved {match.createdAt.toLocaleDateString()} - Tap to open chat area
+              </AppText>
+            </View>
+            <View style={styles.savedConnectionAction}>
+              <Ionicons name="chatbubble-ellipses" size={18} color={colors.onAccent} />
+            </View>
+          </PressableScale>
+        ))}
+
+        <View style={styles.sectionHeader}>
+          <View style={styles.titleBlock}>
+            <AppText style={[styles.sectionTitle, darkMode && styles.textOnDark]}>
+              Live voice rooms
+            </AppText>
+            <AppText style={[styles.sectionMeta, darkMode && styles.mutedOnDark]}>
+              Join rooms hosted by registered members.
+            </AppText>
+          </View>
+          <View style={styles.roomCountPill}>
+            <AppText style={styles.roomCountPillText}>{rooms.length}</AppText>
+          </View>
         </View>
 
         {isLoadingRooms ? (
           <View style={[styles.emptyState, darkMode && styles.cardDark]}>
             <ActivityIndicator size="small" color={colors.accent} />
             <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
-              Loading real registered voice rooms...
+              Loading your real member connections...
             </AppText>
           </View>
         ) : null}
@@ -177,10 +307,10 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
         {!isLoadingRooms && !roomLoadNotice && rooms.length === 0 ? (
           <View style={[styles.emptyState, darkMode && styles.cardDark]}>
             <AppText style={[styles.emptyStateTitle, darkMode && styles.textOnDark]}>
-              No real voice rooms yet
+              No live rooms yet
             </AppText>
             <AppText style={[styles.emptyStateText, darkMode && styles.mutedOnDark]}>
-              Voice rooms will appear here after other registered users complete their profiles.
+              Registered member rooms will appear here when people are available.
             </AppText>
           </View>
         ) : null}
@@ -244,7 +374,7 @@ export function VoiceRoomsScreen({ profile, darkMode = false }: Props) {
         ))}
 
         <View style={[styles.policyCard, darkMode && styles.cardDark]}>
-          <AppText style={[styles.policyTitle, darkMode && styles.textOnDark]}>Room safety rules</AppText>
+          <AppText style={[styles.policyTitle, darkMode && styles.textOnDark]}>Connection safety</AppText>
           <AppText style={[styles.policyText, darkMode && styles.mutedOnDark]}>
             Hosts can remove abusive users. Blocks apply across rooms, nearby discovery, message
             matching, and video.
@@ -280,6 +410,195 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
     paddingBottom: 28
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  titleBlock: {
+    flex: 1,
+    minWidth: 0
+  },
+  screenTitle: {
+    color: colors.ink,
+    fontSize: 30,
+    lineHeight: 35,
+    fontWeight: '900'
+  },
+  screenSubtitle: {
+    marginTop: 4,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700'
+  },
+  refreshButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  connectionHero: {
+    minHeight: 230,
+    borderRadius: 26,
+    padding: 16,
+    gap: 18,
+    borderWidth: 1,
+    borderColor: '#4A2847',
+    backgroundColor: '#120D1E',
+    shadowColor: colors.accent,
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5
+  },
+  connectionHeroTop: {
+    minHeight: 62,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  avatarStack: {
+    width: 132,
+    height: 58,
+    position: 'relative'
+  },
+  avatarStackItem: {
+    position: 'absolute',
+    top: 0
+  },
+  activeBadge: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surfaceMuted
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.success
+  },
+  activeBadgeText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  connectionHeroBottom: {
+    gap: 7
+  },
+  connectionHeroTitle: {
+    color: colors.onAccent,
+    fontSize: 26,
+    lineHeight: 31,
+    fontWeight: '900'
+  },
+  connectionHeroCopy: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700'
+  },
+  connectionStats: {
+    flexDirection: 'row',
+    gap: 10
+  },
+  connectionStat: {
+    flex: 1,
+    minHeight: 70,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    backgroundColor: colors.surfaceMuted
+  },
+  connectionStatValue: {
+    color: colors.accent,
+    fontSize: 22,
+    lineHeight: 27,
+    fontWeight: '900'
+  },
+  connectionStatLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 4
+  },
+  sectionTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    lineHeight: 22,
+    fontWeight: '900'
+  },
+  sectionMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700'
+  },
+  roomCountPill: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  roomCountPillText: {
+    color: colors.onAccent,
+    fontSize: 13,
+    fontWeight: '900'
+  },
+  savedConnectionCard: {
+    minHeight: 78,
+    borderRadius: 20,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface
+  },
+  savedConnectionCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  savedConnectionName: {
+    color: colors.ink,
+    fontSize: 16,
+    lineHeight: 20,
+    fontWeight: '900'
+  },
+  savedConnectionMeta: {
+    marginTop: 3,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700'
+  },
+  savedConnectionAction: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
   },
   hero: {
     minHeight: 280,

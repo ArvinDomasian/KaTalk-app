@@ -22,7 +22,7 @@ type Props = {
   onComplete: (profile: UserProfile) => void;
 };
 
-type AuthMethod = 'apple' | 'google' | 'phone';
+type AuthMethod = 'apple' | 'google' | 'facebook' | 'phone';
 
 type AuthRegistrationResult = {
   method: AuthMethod;
@@ -54,11 +54,14 @@ const interestOptions = [
   'Movies',
   'Music',
   'Gaming',
+  'Fitness',
+  'Foodie',
   'Books',
   'Gym',
   'Walking',
   'Food trips',
   'Art',
+  'Art & Design',
   'Photography',
   'Anime',
   'K-drama',
@@ -79,9 +82,73 @@ const interestOptions = [
   'Volunteering',
   'Spirituality'
 ];
+const introInterestOptions = ['Travel', 'Photography', 'Music', 'Fitness', 'Foodie', 'Gaming', 'Movies', 'Art & Design'];
+
+function authMethodLabel(method: AuthMethod) {
+  if (method === 'apple') {
+    return 'Apple';
+  }
+
+  if (method === 'google') {
+    return 'Google';
+  }
+
+  if (method === 'facebook') {
+    return 'Facebook';
+  }
+
+  return 'Phone';
+}
+
+function interestIconFor(interest: string): keyof typeof Ionicons.glyphMap {
+  const normalized = interest.toLowerCase();
+
+  if (normalized.includes('travel') || normalized.includes('walking')) {
+    return 'airplane';
+  }
+
+  if (normalized.includes('photo') || normalized.includes('art') || normalized.includes('fashion')) {
+    return 'camera';
+  }
+
+  if (normalized.includes('music') || normalized.includes('karaoke') || normalized.includes('dancing')) {
+    return 'musical-notes';
+  }
+
+  if (normalized.includes('gym') || normalized.includes('fitness')) {
+    return 'barbell';
+  }
+
+  if (normalized.includes('food') || normalized.includes('coffee') || normalized.includes('cooking')) {
+    return 'restaurant';
+  }
+
+  if (normalized.includes('gaming') || normalized.includes('board')) {
+    return 'game-controller';
+  }
+
+  if (normalized.includes('movie') || normalized.includes('drama') || normalized.includes('anime')) {
+    return 'film';
+  }
+
+  if (normalized.includes('books') || normalized.includes('study')) {
+    return 'book';
+  }
+
+  if (normalized.includes('pets')) {
+    return 'paw';
+  }
+
+  if (normalized.includes('deep') || normalized.includes('quiet')) {
+    return 'chatbubbles';
+  }
+
+  return 'sparkles';
+}
 
 export function RegistrationScreen({ onComplete }: Props) {
   const [showRegistration, setShowRegistration] = useState(false);
+  const [setupStep, setSetupStep] = useState<'interests' | 'details'>('interests');
   const [authResult, setAuthResult] = useState<AuthRegistrationResult | null>(null);
   const formOpacity = useRef(new Animated.Value(0)).current;
   const [nickname, setNickname] = useState('');
@@ -93,9 +160,9 @@ export function RegistrationScreen({ onComplete }: Props) {
   const [minAge, setMinAge] = useState(21);
   const [maxAge, setMaxAge] = useState(35);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([
-    'Coffee',
-    'Movies',
-    'Music'
+    'Travel',
+    'Music',
+    'Gaming'
   ]);
   const [comfort, setComfort] = useState<UserProfile['comfort']>('shy');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -168,6 +235,7 @@ export function RegistrationScreen({ onComplete }: Props) {
 
   function handleAuthRegistered(result: AuthRegistrationResult) {
     setAuthResult(result);
+    setSetupStep('interests');
 
     if (result.displayName && !nickname.trim()) {
       setNickname(result.displayName.split(' ')[0]);
@@ -180,24 +248,64 @@ export function RegistrationScreen({ onComplete }: Props) {
     return <WelcomeStartScreen onGetStarted={handleAuthRegistered} onLogin={onComplete} />;
   }
 
+  if (setupStep === 'interests') {
+    return (
+      <Animated.View style={[styles.root, { opacity: formOpacity }]}>
+        <InterestSetupScreen
+          selectedInterests={selectedInterests}
+          onToggleInterest={(option) => {
+            setSelectedInterests((current) =>
+              current.includes(option)
+                ? current.filter((item) => item !== option)
+                : [...current, option]
+            );
+          }}
+          onBack={() => setShowRegistration(false)}
+          onSkip={() => {
+            setSelectedInterests((current) =>
+              current.length >= 3 ? current : ['Coffee', 'Music', 'Deep talks']
+            );
+            setSetupStep('details');
+          }}
+          onNext={() => setSetupStep('details')}
+        />
+      </Animated.View>
+    );
+  }
+
   return (
     <Animated.View style={[styles.root, { opacity: formOpacity }]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.formHero}>
+        <View style={styles.setupTopBar}>
           <PressableScale
             accessibilityRole="button"
-            onPress={() => setShowRegistration(false)}
+            onPress={() => setSetupStep('interests')}
             style={styles.formBackButton}
           >
-            <Ionicons name="chevron-back" size={20} color={colors.ink} />
+            <Ionicons name="chevron-back" size={20} color={colors.onAccent} />
           </PressableScale>
-          <AppText style={styles.formBrand}>KaTalk</AppText>
-          <AppText style={styles.formTitle}>Create your calm dating space</AppText>
+          <View style={styles.coinPill}>
+            <Ionicons name="ellipse" size={13} color={colors.gold} />
+            <AppText style={styles.coinPillText}>1,250</AppText>
+          </View>
+        </View>
+
+        <View style={styles.setupHero}>
+          <View style={styles.setupProgressRow}>
+            <View style={[styles.setupProgressDot, styles.setupProgressActive]} />
+            <View style={[styles.setupProgressDot, selectedInterests.length >= 3 && styles.setupProgressActive]} />
+            <View style={[styles.setupProgressDot, acceptedTerms && acceptedPrivacy && acceptedRules && styles.setupProgressActive]} />
+          </View>
+          <AppText style={styles.formTitle}>Tell us about you</AppText>
           <AppText style={styles.formSubtitle}>
-            {authResult
-              ? `Registered with ${authResult.method}. Finish your dating profile.`
-              : 'Adults only. Anonymous first. Safety controls are part of the first step.'}
+            Select your interests so we can find your vibe.
           </AppText>
+          {authResult ? (
+            <View style={styles.authMethodPill}>
+              <Ionicons name="shield-checkmark" size={14} color={colors.accent} />
+              <AppText style={styles.authMethodPillText}>Verified with {authResult.method}</AppText>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.card}>
@@ -265,7 +373,7 @@ export function RegistrationScreen({ onComplete }: Props) {
           </Field>
 
           <Field label={`Interests (${selectedInterests.length} selected)`}>
-            <ChipGroup
+            <InterestGrid
               options={interestOptions}
               selected={selectedInterests}
               onToggle={(option) => {
@@ -330,13 +438,101 @@ export function RegistrationScreen({ onComplete }: Props) {
         </View>
 
         <PrimaryButton
-          label="Enter KaTalk"
+          label="Next"
           icon="arrow-forward-outline"
           disabled={!canSubmit}
           onPress={submit}
+          style={styles.enterButton}
         />
       </ScrollView>
     </Animated.View>
+  );
+}
+
+function InterestSetupScreen({
+  selectedInterests,
+  onToggleInterest,
+  onBack,
+  onSkip,
+  onNext
+}: {
+  selectedInterests: string[];
+  onToggleInterest: (interest: string) => void;
+  onBack: () => void;
+  onSkip: () => void;
+  onNext: () => void;
+}) {
+  return (
+    <View style={styles.interestSetupRoot}>
+      <View style={styles.setupStatusRow}>
+        <AppText style={styles.authTime}>9:41</AppText>
+        <View style={styles.authSignalRow}>
+          <Ionicons name="cellular" size={13} color={colors.onAccent} />
+          <Ionicons name="wifi" size={13} color={colors.onAccent} />
+          <Ionicons name="battery-half" size={15} color={colors.onAccent} />
+        </View>
+      </View>
+
+      <View style={styles.interestSetupTop}>
+        <PressableScale accessibilityRole="button" onPress={onBack} style={styles.setupBackButton}>
+          <Ionicons name="chevron-back" size={18} color={colors.onAccent} />
+        </PressableScale>
+        <View style={styles.coinPill}>
+          <Ionicons name="ellipse" size={13} color={colors.gold} />
+          <AppText style={styles.coinPillText}>1,250</AppText>
+        </View>
+      </View>
+
+      <View style={styles.interestSetupCopy}>
+        <AppText style={styles.formTitle}>Tell us about you</AppText>
+        <AppText style={styles.formSubtitle}>
+          Select your interests so we can find your vibe.
+        </AppText>
+      </View>
+
+      <View style={styles.introInterestGrid}>
+        {introInterestOptions.map((interest) => {
+          const active = selectedInterests.includes(interest);
+
+          return (
+            <PressableScale
+              key={interest}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => onToggleInterest(interest)}
+              style={[styles.introInterestTile, active && styles.introInterestTileActive]}
+            >
+              <Ionicons
+                name={interestIconFor(interest)}
+                size={18}
+                color={active ? colors.accent : colors.muted}
+              />
+              <AppText style={[styles.introInterestText, active && styles.introInterestTextActive]}>
+                {interest}
+              </AppText>
+            </PressableScale>
+          );
+        })}
+      </View>
+
+      <View style={styles.interestSetupFooter}>
+        <View style={styles.setupProgressRow}>
+          <View style={[styles.setupProgressDot, styles.setupProgressActive]} />
+          <View style={styles.setupProgressDot} />
+          <View style={styles.setupProgressDot} />
+          <View style={styles.setupProgressDot} />
+          <View style={styles.setupProgressDot} />
+        </View>
+        <View style={styles.setupFooterActions}>
+          <PressableScale accessibilityRole="button" onPress={onSkip} style={styles.skipButton}>
+            <AppText style={styles.skipButtonText}>Skip</AppText>
+          </PressableScale>
+          <PressableScale accessibilityRole="button" onPress={onNext} style={styles.setupNextButton}>
+            <AppText style={styles.setupNextText}>Next</AppText>
+          </PressableScale>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -347,7 +543,6 @@ function WelcomeStartScreen({
   onGetStarted: (result: AuthRegistrationResult) => void;
   onLogin: (profile: UserProfile) => void;
 }) {
-  const [showRegisterOptions, setShowRegisterOptions] = useState(false);
   const [showLoginForm, setShowLoginForm] = useState(false);
   const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
   const [authName, setAuthName] = useState('');
@@ -420,16 +615,7 @@ function WelcomeStartScreen({
   function openLoginForm() {
     transitionCard(() => {
       resetAuthFields();
-      setShowRegisterOptions(false);
       setShowLoginForm(true);
-    });
-  }
-
-  function openRegisterOptions() {
-    transitionCard(() => {
-      resetAuthFields();
-      setShowRegisterOptions(true);
-      setShowLoginForm(false);
     });
   }
 
@@ -454,28 +640,6 @@ function WelcomeStartScreen({
       displayName: authName.trim() || undefined,
       contact: authMethod === 'phone' ? phoneNumber.trim() : authEmail.trim()
     });
-  }
-
-  function createLoginStarterProfile(result: { displayName?: string; contact?: string }): UserProfile {
-    const contact = result.contact ?? loginEmail.trim();
-    const emailName = contact.includes('@') ? contact.split('@')[0] : '';
-    const nickname = result.displayName?.trim() || emailName || 'KaTalk member';
-
-    return {
-      id: getCurrentAuthUserId() ?? `local-${Date.now()}`,
-      nickname,
-      dateOfBirth: '2000-01-01',
-      gender: 'Prefer not to say',
-      preference: 'Everyone',
-      ageRange: '21-35',
-      interests: ['Coffee', 'Music', 'Deep talks'],
-      comfort: 'balanced',
-      authMethod: 'google',
-      authContact: contact,
-      acceptedTerms: true,
-      acceptedPrivacy: true,
-      acceptedRules: true
-    };
   }
 
   async function handleSendVerification() {
@@ -519,10 +683,14 @@ function WelcomeStartScreen({
           return;
         }
       } catch {
-        setVerificationStatus('Signed in. Opening KaTalk...');
+        setVerificationStatus('Signed in. Finish telling KaTalk about yourself.');
       }
 
-      onLogin(createLoginStarterProfile(result));
+      onGetStarted({
+        method: 'google',
+        displayName: result.displayName,
+        contact: result.contact ?? loginEmail.trim()
+      });
     } catch {
       setVerificationStatus('Sign in took too long. Check your connection, then try again.');
     } finally {
@@ -566,24 +734,12 @@ function WelcomeStartScreen({
         <View style={styles.authGridOverlay} />
         <View style={styles.authStatusRow}>
           <AppText style={styles.authTime}>9:41</AppText>
-          {!showLoginForm ? (
-            <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.authLoginLink}>
-              <AppText style={styles.authLoginText}>Log In</AppText>
-              <Ionicons name="arrow-forward" size={13} color={colors.onAccent} />
-            </PressableScale>
-          ) : (
-            <View style={styles.authSignalRow}>
-              <Ionicons name="cellular" size={13} color={colors.onAccent} />
-              <Ionicons name="wifi" size={13} color={colors.onAccent} />
-              <Ionicons name="battery-half" size={15} color={colors.onAccent} />
-            </View>
-          )}
+          <View style={styles.authSignalRow}>
+            <Ionicons name="cellular" size={13} color={colors.onAccent} />
+            <Ionicons name="wifi" size={13} color={colors.onAccent} />
+            <Ionicons name="battery-half" size={15} color={colors.onAccent} />
+          </View>
         </View>
-
-        <AppText style={styles.authGhostWords}>
-          SMART{'\n'}MATCHING FOR{'\n'}REAL LOVE
-        </AppText>
-        <Ionicons name="heart-outline" size={206} color="rgba(255,255,255,0.11)" style={styles.authHeart} />
 
         <Animated.View
           style={[
@@ -594,22 +750,51 @@ function WelcomeStartScreen({
             }
           ]}
         >
-          {!authMethod && !showLoginForm && !showRegisterOptions ? (
+          {!authMethod && !showLoginForm ? (
             <>
-              <AppText style={styles.authHeadline}>
-                SMART
-                <AppText style={styles.authHeartDot}>●</AppText>
-                {'\n'}
-                <AppText style={styles.authHeadlineAccent}>MATCHING</AppText> FOR{'\n'}
-                REAL LOVE{'\n'}TODAY
-              </AppText>
+              <View style={styles.onboardingStage}>
+                <View style={styles.authGlowOne} />
+                <View style={styles.authGlowTwo} />
+                <View style={styles.onboardingTopTools}>
+                  <View style={styles.onboardingCoinPill}>
+                    <Ionicons name="ellipse" size={12} color={colors.gold} />
+                    <AppText style={styles.onboardingCoinText}>1,250</AppText>
+                  </View>
+                  <Ionicons name="ellipsis-horizontal" size={18} color={colors.onAccent} />
+                </View>
+                <View style={styles.authOrbitLine} />
+                <View style={[styles.authOrbitAvatar, styles.authOrbitAvatarLeft]}>
+                  <AppText style={styles.authOrbitInitial}>M</AppText>
+                </View>
+                <View style={[styles.authOrbitAvatar, styles.authOrbitAvatarRight]}>
+                  <AppText style={styles.authOrbitInitial}>K</AppText>
+                </View>
+                <View style={[styles.authOrbitAvatar, styles.authOrbitAvatarBottom]}>
+                  <AppText style={styles.authOrbitInitial}>A</AppText>
+                </View>
+                <View style={styles.onboardingLogoBlock}>
+                  <View style={styles.authLogoMark}>
+                    <Ionicons name="heart" size={32} color={colors.onAccent} />
+                    <Ionicons name="sparkles" size={15} color={colors.onAccent} style={styles.authLogoSpark} />
+                  </View>
+                  <View style={styles.authLogoWordRow}>
+                    <AppText style={styles.authLogoText}>Ka</AppText>
+                    <AppText style={[styles.authLogoText, styles.authHeadlineAccent]}>Talk</AppText>
+                  </View>
+                  <AppText style={styles.authLogoTagline}>
+                    Where real conversations{'\n'}turn into real connections.
+                  </AppText>
+                </View>
+              </View>
               <PressableScale
                 accessibilityRole="button"
-                onPress={() => selectMethod('phone')}
+                accessibilityLabel="Get started with KaTalk registration"
+                onPress={() => selectMethod('google')}
                 style={styles.phoneContinueButton}
               >
-                <AppText style={styles.phoneContinueText}>Continue With Phone</AppText>
+                <AppText style={styles.phoneContinueText}>Get Started</AppText>
               </PressableScale>
+              <AppText style={styles.joinWithText}>Join with</AppText>
               <View style={styles.socialButtonRow}>
                 <PressableScale
                   accessibilityRole="button"
@@ -627,7 +812,19 @@ function WelcomeStartScreen({
                 >
                   <Ionicons name="logo-google" size={18} color={colors.onAccent} />
                 </PressableScale>
+                <PressableScale
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue with Facebook"
+                  onPress={() => selectMethod('facebook')}
+                  style={styles.socialIconButton}
+                >
+                  <Ionicons name="logo-facebook" size={18} color={colors.onAccent} />
+                </PressableScale>
               </View>
+              <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.authSignInLine}>
+                <AppText style={styles.authSignInMuted}>Already have an account?</AppText>
+                <AppText style={styles.authSignInAccent}>Sign in</AppText>
+              </PressableScale>
             </>
           ) : (
             <>
@@ -635,7 +832,7 @@ function WelcomeStartScreen({
                 {authMethod
                   ? authMethod === 'phone'
                     ? 'Register With Phone'
-                    : `Register With ${authMethod === 'apple' ? 'Apple' : 'Google'}`
+                    : `Register With ${authMethodLabel(authMethod)}`
                   : showLoginForm
                     ? 'Log In To KaTalk'
                     : 'Register To Start Meeting People'}
@@ -678,7 +875,7 @@ function WelcomeStartScreen({
                   onBack={resetToMethods}
                   onContinue={handleConfirmVerification}
                 />
-              ) : showLoginForm ? (
+              ) : (
                 <LoginForm
                   email={loginEmail}
                   password={loginPassword}
@@ -697,31 +894,6 @@ function WelcomeStartScreen({
                   onPasswordReset={handlePasswordReset}
                   onBack={() => transitionCard(() => setShowLoginForm(false))}
                 />
-              ) : (
-                <>
-                  <AuthOptionButton
-                    icon="logo-apple"
-                    label="Continue with Apple"
-                    onPress={() => selectMethod('apple')}
-                    variant="apple"
-                  />
-                  <AuthOptionButton
-                    icon="logo-google"
-                    label="Continue with Google"
-                    onPress={() => selectMethod('google')}
-                    variant="google"
-                  />
-                  <AuthOptionButton
-                    icon="phone-portrait"
-                    label="Continue with Phone"
-                    onPress={() => selectMethod('phone')}
-                    variant="phone"
-                  />
-                  <PressableScale accessibilityRole="button" onPress={openLoginForm} style={styles.loginPrompt}>
-                    <AppText style={styles.loginPromptText}>Already have an account?</AppText>
-                    <AppText style={styles.loginPromptAction}>Log in</AppText>
-                  </PressableScale>
-                </>
               )}
             </>
           )}
@@ -822,7 +994,7 @@ function AuthMethodForm({
         onChangeText={onEmailChange}
         keyboardType="email-address"
         autoCapitalize="none"
-        placeholder={`${method === 'apple' ? 'Apple' : 'Google'} email`}
+        placeholder={`${authMethodLabel(method)} email`}
         placeholderTextColor={colors.muted}
         style={styles.authInput}
       />
@@ -938,36 +1110,6 @@ function LoginForm({
   );
 }
 
-function AuthOptionButton({
-  icon,
-  label,
-  onPress,
-  variant
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  onPress: () => void;
-  variant: 'apple' | 'google' | 'phone';
-}) {
-  const variantStyle =
-    variant === 'apple'
-      ? styles.appleAuthButton
-      : variant === 'google'
-        ? styles.googleAuthButton
-        : styles.phoneAuthButton;
-
-  return (
-    <PressableScale
-      accessibilityRole="button"
-      onPress={onPress}
-      style={[styles.authButton, variantStyle]}
-    >
-      <Ionicons name={icon} size={19} color={colors.ink} />
-      <AppText style={styles.authButtonText}>{label}</AppText>
-    </PressableScale>
-  );
-}
-
 function Field({ label, children }: React.PropsWithChildren<{ label: string }>) {
   return (
     <View style={styles.field}>
@@ -1024,6 +1166,45 @@ function ChipGroup({
           onPress={() => onToggle(option)}
         />
       ))}
+    </View>
+  );
+}
+
+function InterestGrid({
+  options,
+  selected,
+  onToggle
+}: {
+  options: string[];
+  selected: string[];
+  onToggle: (option: string) => void;
+}) {
+  return (
+    <View style={styles.interestGrid}>
+      {options.map((option) => {
+        const active = selected.includes(option);
+
+        return (
+          <PressableScale
+            key={option}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            onPress={() => onToggle(option)}
+            style={[styles.interestTile, active && styles.interestTileActive]}
+          >
+            <View style={[styles.interestIconBubble, active && styles.interestIconBubbleActive]}>
+              <Ionicons
+                name={interestIconFor(option)}
+                size={18}
+                color={active ? colors.onAccent : colors.muted}
+              />
+            </View>
+            <AppText style={[styles.interestTileText, active && styles.interestTileTextActive]}>
+              {option}
+            </AppText>
+          </PressableScale>
+        );
+      })}
     </View>
   );
 }
@@ -1164,7 +1345,7 @@ function ConsentRow({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.background
+    backgroundColor: '#070812'
   },
   welcomeRoot: {
     flex: 1,
@@ -1233,8 +1414,8 @@ const styles = StyleSheet.create({
     left: 20,
     right: 14,
     color: 'rgba(255,255,255,0.045)',
-    fontSize: 34,
-    lineHeight: 40,
+    fontSize: 52,
+    lineHeight: 58,
     fontWeight: '900',
     letterSpacing: 0,
     zIndex: 1
@@ -1247,27 +1428,157 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '-10deg' }]
   },
   welcomeCard: {
+    flex: 1,
     width: '100%',
-    marginTop: 'auto',
     paddingHorizontal: 0,
     paddingTop: 20,
     paddingBottom: 0,
     alignItems: 'stretch',
+    justifyContent: 'flex-end',
     gap: 12,
     zIndex: 3
   },
-  authHeadline: {
-    color: colors.onAccent,
-    fontSize: 25,
-    lineHeight: 29,
-    fontWeight: '900',
-    letterSpacing: 0,
-    maxWidth: 270
+  onboardingStage: {
+    flex: 1,
+    minHeight: 0,
+    borderRadius: 28,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 22,
+    backgroundColor: 'rgba(8, 9, 18, 0.72)'
   },
-  authHeartDot: {
-    color: colors.accent,
-    fontSize: 15,
-    lineHeight: 22
+  onboardingTopTools: {
+    position: 'absolute',
+    top: 10,
+    left: 8,
+    right: 8,
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 5
+  },
+  onboardingCoinPill: {
+    minHeight: 26,
+    borderRadius: 13,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(20, 21, 32, 0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)'
+  },
+  onboardingCoinText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
+  onboardingLogoBlock: {
+    position: 'absolute',
+    top: 104,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    gap: 6,
+    zIndex: 4
+  },
+  authGlowOne: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    left: -42,
+    top: 12,
+    backgroundColor: 'rgba(255, 61, 157, 0.28)'
+  },
+  authGlowTwo: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    right: -48,
+    bottom: -16,
+    backgroundColor: 'rgba(162, 89, 255, 0.26)'
+  },
+  authOrbitLine: {
+    position: 'absolute',
+    left: 54,
+    right: 46,
+    top: 238,
+    height: 1,
+    backgroundColor: 'rgba(255, 61, 157, 0.42)',
+    transform: [{ rotate: '-9deg' }]
+  },
+  authOrbitAvatar: {
+    position: 'absolute',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: '#201A33',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  authOrbitAvatarLeft: {
+    left: 36,
+    top: 214
+  },
+  authOrbitAvatarRight: {
+    right: 28,
+    top: 198
+  },
+  authOrbitAvatarBottom: {
+    right: 86,
+    bottom: 68
+  },
+  authOrbitInitial: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  authLogoStack: {
+    alignItems: 'center',
+    gap: 3,
+    marginBottom: 4
+  },
+  authLogoMark: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.5,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8
+  },
+  authLogoSpark: {
+    position: 'absolute',
+    top: 14,
+    right: 13
+  },
+  authLogoText: {
+    color: colors.onAccent,
+    fontSize: 28,
+    lineHeight: 32,
+    fontWeight: '900'
+  },
+  authLogoWordRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  authLogoTagline: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+    textAlign: 'center'
   },
   authHeadlineAccent: {
     color: colors.accent
@@ -1299,6 +1610,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#171A22'
   },
+  joinWithText: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginTop: 2
+  },
+  authSignInLine: {
+    minHeight: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4
+  },
+  authSignInMuted: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '800'
+  },
+  authSignInAccent: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '900'
+  },
   welcomeTitle: {
     fontSize: 21,
     lineHeight: 26,
@@ -1316,47 +1651,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     alignSelf: 'center'
-  },
-  authButton: {
-    width: '100%',
-    minHeight: 50,
-    borderRadius: 26,
-    paddingHorizontal: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 18
-  },
-  appleAuthButton: {
-    backgroundColor: colors.lavender
-  },
-  googleAuthButton: {
-    backgroundColor: colors.surfaceMuted
-  },
-  phoneAuthButton: {
-    backgroundColor: colors.accent
-  },
-  authButtonText: {
-    flex: 1,
-    textAlign: 'center',
-    fontWeight: '900',
-    fontSize: 13
-  },
-  loginPrompt: {
-    minHeight: 34,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6
-  },
-  loginPromptText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '800'
-  },
-  loginPromptAction: {
-    color: colors.accent,
-    fontSize: 12,
-    fontWeight: '900'
   },
   authForm: {
     width: '100%',
@@ -1440,27 +1734,116 @@ const styles = StyleSheet.create({
   disabledAuthButton: {
     opacity: 0.45
   },
-  getStartedButton: {
-    marginTop: 6,
+  interestSetupRoot: {
+    flex: 1,
     width: '100%',
-    minHeight: 52,
-    borderRadius: 26,
-    paddingHorizontal: 20,
+    maxWidth: 360,
+    alignSelf: 'center',
+    marginVertical: 18,
+    borderRadius: 34,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 106, 133, 0.48)',
+    backgroundColor: '#070812',
+    overflow: 'hidden',
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 22
+  },
+  setupStatusRow: {
+    minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.accent
+    justifyContent: 'space-between'
   },
-  getStartedText: {
+  interestSetupTop: {
+    minHeight: 40,
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  setupBackButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)'
+  },
+  interestSetupCopy: {
+    gap: 8,
+    paddingTop: 32,
+    paddingBottom: 18
+  },
+  introInterestGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12
+  },
+  introInterestTile: {
+    width: '48%',
+    minHeight: 58,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: '#141520',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9
+  },
+  introInterestTileActive: {
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(255, 107, 157, 0.08)'
+  },
+  introInterestText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800'
+  },
+  introInterestTextActive: {
+    color: colors.onAccent
+  },
+  interestSetupFooter: {
+    marginTop: 'auto',
+    gap: 12
+  },
+  setupFooterActions: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12
+  },
+  skipButton: {
+    width: 78,
+    minHeight: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  skipButtonText: {
+    color: colors.muted,
+    fontSize: 12,
     fontWeight: '900'
   },
-  formHero: {
-    padding: 18,
-    borderRadius: 24,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    gap: 8
+  setupNextButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent
+  },
+  setupNextText: {
+    color: colors.onAccent,
+    fontSize: 13,
+    fontWeight: '900'
+  },
+  setupTopBar: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
   },
   formBackButton: {
     width: 38,
@@ -1470,34 +1853,86 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.surfaceMuted
   },
-  formBrand: {
-    color: colors.accent,
-    fontWeight: '900',
-    fontSize: 16
+  coinPill: {
+    minHeight: 34,
+    borderRadius: 17,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  coinPillText: {
+    color: colors.onAccent,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  setupHero: {
+    gap: 9,
+    paddingTop: 10,
+    paddingBottom: 4
+  },
+  setupProgressRow: {
+    flexDirection: 'row',
+    gap: 7,
+    marginBottom: 12
+  },
+  setupProgressDot: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.surfaceMuted
+  },
+  setupProgressActive: {
+    backgroundColor: colors.accent
   },
   formTitle: {
-    fontSize: 24,
-    lineHeight: 30,
+    color: colors.onAccent,
+    fontSize: 25,
+    lineHeight: 31,
     fontWeight: '900'
   },
   formSubtitle: {
     color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
     fontWeight: '700'
+  },
+  authMethodPill: {
+    alignSelf: 'flex-start',
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: '#3B2941'
+  },
+  authMethodPillText: {
+    color: colors.onAccent,
+    fontSize: 11,
+    fontWeight: '900'
   },
   content: {
     padding: 16,
     gap: 14,
-    paddingBottom: 28
+    paddingBottom: 34,
+    backgroundColor: '#070812'
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: '#332241',
     padding: 16,
-    gap: 12
+    gap: 13
   },
   sectionTitle: {
+    color: colors.onAccent,
     fontSize: 18,
     fontWeight: '900'
   },
@@ -1510,13 +1945,14 @@ const styles = StyleSheet.create({
     fontSize: 13
   },
   input: {
-    minHeight: 46,
-    borderRadius: 14,
+    minHeight: 48,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: colors.line,
-    paddingHorizontal: 12,
+    borderColor: '#332241',
+    paddingHorizontal: 14,
     color: colors.ink,
-    backgroundColor: colors.background
+    backgroundColor: '#10111C',
+    fontWeight: '800'
   },
   error: {
     color: colors.danger,
@@ -1544,17 +1980,17 @@ const styles = StyleSheet.create({
     gap: 8
   },
   chip: {
-    minHeight: 40,
-    borderRadius: 14,
+    minHeight: 38,
+    borderRadius: 15,
     paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: '#1A1622',
     borderWidth: 1,
-    borderColor: colors.line
+    borderColor: '#2B2138'
   },
   chipActive: {
-    backgroundColor: colors.accent,
+    backgroundColor: 'rgba(255, 61, 157, 0.16)',
     borderColor: colors.accent
   },
   chipText: {
@@ -1564,13 +2000,55 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.onAccent
   },
+  interestGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10
+  },
+  interestTile: {
+    width: '47.5%',
+    minHeight: 70,
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    backgroundColor: '#141520',
+    borderWidth: 1,
+    borderColor: '#2B2138'
+  },
+  interestTileActive: {
+    borderColor: colors.accent,
+    backgroundColor: 'rgba(255, 61, 157, 0.12)'
+  },
+  interestIconBubble: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted
+  },
+  interestIconBubbleActive: {
+    backgroundColor: colors.accent
+  },
+  interestTileText: {
+    flex: 1,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  interestTileTextActive: {
+    color: colors.onAccent
+  },
   sliderCard: {
     gap: 16,
     padding: 16,
     borderRadius: 20,
-    backgroundColor: colors.surface,
+    backgroundColor: '#10111C',
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: '#332241',
     shadowColor: colors.accent,
     shadowOpacity: 0.18,
     shadowRadius: 12,
@@ -1646,10 +2124,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
-    backgroundColor: colors.surfaceMuted
+    backgroundColor: '#1A1622',
+    borderWidth: 1,
+    borderColor: '#2B2138'
   },
   segmentActive: {
-    backgroundColor: colors.accent
+    backgroundColor: colors.accent,
+    borderColor: colors.accent
   },
   segmentText: {
     fontWeight: '800',
@@ -1665,12 +2146,23 @@ const styles = StyleSheet.create({
     gap: 10
   },
   safetyText: {
-    flex: 1
+    flex: 1,
+    color: colors.muted,
+    fontWeight: '700'
   },
   consentRow: {
     minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10
+  },
+  enterButton: {
+    borderRadius: 18,
+    minHeight: 52,
+    shadowColor: colors.accent,
+    shadowOpacity: 0.24,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6
   }
 });
